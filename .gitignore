@@ -1,0 +1,36 @@
+# Dependencies & logs
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+*.log
+
+# Environment & local overrides
+.env
+.env.*
+!.env.example
+pricing_override.json
+*.local.json
+update_cache.json
+archive_cache.json
+sidecar_data/
+
+# Local SQLite / telemetry test fixtures
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# OS & editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+tmp/
+*.tmp
+*.bak

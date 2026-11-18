@@ -1,0 +1,10 @@
+{
+  "name": "monitor_board",
+  "version": "2.0.0",
+  "type": "module",
+  "license": "MIT",
+  "description": "monowatch telemetry sidecar backend and Swiss UI",
+  "scripts": {
+    "test": "node --test test/telemetry.test.mjs"
+  }
+}

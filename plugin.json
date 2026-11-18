@@ -1,0 +1,15 @@
+{
+  "name": "monowatch",
+  "displayName": "monowatch",
+  "version": "2.0.0",
+  "author": "riverxorange",
+  "license": "MIT",
+  "repository": "https://github.com/riverxorange/agy-monowatch",
+  "description": "Local, read-only usage dashboard for Google Antigravity. Shows equivalent API cost and subscription value, per-model cache hit rate, TTFT and speed, context usage and compactions, and subagent costs, in light/dark and English/Chinese.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "Open monowatch to see my usage this billing cycle",
+    "How much context is this conversation using?",
+    "Which model has been the fastest for me recently?"
+  ]
+}

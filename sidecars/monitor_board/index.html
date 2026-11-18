@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>monowatch</title>
+  <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+  <script src="/preload.js"></script>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    :root {
+      --bg-canvas: #FCFCFA;
+      --ink-primary: #141413;
+      --ink-muted: #8C8C87;
+      --rule-whisper: #EAEAE5;
+      --dot-free: #D5D5CE;
+      --accent-mint: #109868;
+    }
+    :root[data-theme="dark"] {
+      --bg-canvas: #141413;
+      --ink-primary: #F0F0EB;
+      --ink-muted: #787872;
+      --rule-whisper: #282825;
+      --dot-free: #3E3E3A;
+      --accent-mint: #20B884;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg-canvas: #141413;
+        --ink-primary: #F0F0EB;
+        --ink-muted: #787872;
+        --rule-whisper: #282825;
+        --dot-free: #3E3E3A;
+        --accent-mint: #20B884;
+      }
+    }
+    @font-face {
+      font-family: 'Geist';
+      src: url('/fonts/Geist-Variable.woff2') format('woff2-variations'),
+           url('/fonts/Geist-Variable.woff2') format('woff2');
+      font-weight: 100 900;
+      font-style: normal;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: 'Geist Pixel Circle';
+      src: url('/fonts/GeistPixel-Circle.woff2') format('woff2');
+      font-weight: 400;
+      font-style: normal;
+      font-display: swap;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: var(--bg-canvas) !important;
+      background-color: var(--bg-canvas) !important;
+      color: var(--ink-primary) !important;
+      font-family: 'Geist', -apple-system, BlinkMacSystemFont, 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif !important;
+      font-size: 13.5px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    .swiss-shell {
+      min-height: 100vh;
+      width: 100%;
+      background-color: var(--bg-canvas) !important;
+      color: var(--ink-primary) !important;
+      display: flex;
+      flex-direction: column;
+    }
+    .view-overview {
+      width: 100%;
+      max-width: 620px;
+      margin: 0 auto;
+      box-sizing: border-box;
+    }
+    .sec-pad {
+      padding-left: clamp(22px, 7vw, 44px);
+      padding-right: clamp(22px, 7vw, 44px);
+      padding-left: clamp(22px, 7cqi, 44px);
+      padding-right: clamp(22px, 7cqi, 44px);
+    }
+    .ov-header {
+      padding-top: clamp(28px, 5vw, 40px);
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--rule-whisper);
+    }
+    .ov-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--ink-muted);
+      margin-bottom: 16px;
+    }
+    .ov-hero-cost {
+      font-size: clamp(36px, 8vw, 44px);
+      font-weight: 300;
+      letter-spacing: -0.04em;
+      line-height: 1;
+      color: var(--ink-primary);
+      font-variant-numeric: tabular-nums;
+    }
+    .empty-state {
+      padding: 64px 0;
+      font-size: 13px;
+      color: var(--ink-muted);
+    }
+    .swiss-tooltip {
+      opacity: 0;
+      pointer-events: none;
+      position: fixed;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="swiss-shell" role="main" data-boot="skeleton">
+    <div class="view-overview sec-pad">
+      <header class="ov-header">
+        <div class="ov-meta">
+          <span style="display:inline-flex;align-items:center;gap:10px;font-family:'Geist Pixel Circle','Geist',sans-serif;font-size:22.5px;font-weight:400;letter-spacing:0.01em;line-height:1;color:var(--ink-primary)"><svg width="28" height="28" viewBox="0 0 256 256" fill="none" aria-hidden="true" style="display:block;flex-shrink:0"><rect x="233" y="109" width="13" height="38" rx="5" fill="var(--ink-primary)"/><circle cx="124" cy="128" r="106" fill="var(--bg-canvas)" stroke="var(--ink-primary)" stroke-width="13"/><circle cx="124" cy="52" r="8.8" fill="var(--ink-primary)"/><circle cx="162" cy="62.2" r="8.8" fill="var(--ink-primary)"/><circle cx="189.8" cy="90" r="8.8" fill="var(--ink-primary)"/><circle cx="200" cy="128" r="8.8" fill="var(--ink-primary)"/><circle cx="189.8" cy="166" r="8.8" fill="var(--ink-primary)"/><circle cx="162" cy="193.8" r="8.8" fill="var(--ink-primary)"/><circle cx="124" cy="204" r="8.8" fill="var(--ink-primary)"/><circle cx="86" cy="193.8" r="8.8" fill="var(--ink-primary)"/><circle cx="58.2" cy="166" r="11.5" fill="var(--accent-mint)"/><circle cx="48" cy="128" r="6.8" fill="var(--dot-free)"/><circle cx="58.2" cy="90" r="6.8" fill="var(--dot-free)"/><circle cx="86" cy="62.2" r="6.8" fill="var(--dot-free)"/><line x1="124" y1="128" x2="91.2" y2="109.1" stroke="var(--ink-primary)" stroke-width="10.8" stroke-linecap="round"/><line x1="124" y1="128" x2="171.2" y2="100.7" stroke="var(--ink-primary)" stroke-width="8.8" stroke-linecap="round"/><circle cx="124" cy="128" r="10.2" fill="var(--ink-primary)"/><circle cx="124" cy="128" r="4.6" fill="var(--accent-mint)"/></svg><span style="display:inline-block;transform:translateY(-1.5px)">monowatch</span></span>
+          <span class="tnum" id="boot-badge">同步中</span>
+        </div>
+      </header>
+      <div class="thread-list">
+        <div class="empty-state" id="boot-status">正在同步会话数据…</div>
+      </div>
+    </div>
+  </div>
+  <div id="swiss-tooltip" class="swiss-tooltip" role="tooltip" aria-hidden="true"></div>
+  <script>
+    (function () {
+      var isEnBoot = false;
+      try {
+        var lp = new URLSearchParams(window.location.search).get('lang');
+        if (lp === 'en') isEnBoot = true;
+        else if (lp !== 'zh') {
+          var nav = (navigator.languages && navigator.languages[0]) || navigator.language || '';
+          isEnBoot = !/^zh/i.test(String(nav).trim());
+        }
+        if (isEnBoot) {
+          document.documentElement.lang = 'en';
+          var badge = document.getElementById('boot-badge');
+          var status = document.getElementById('boot-status');
+          if (badge) badge.textContent = 'Syncing';
+          if (status) status.textContent = 'Syncing conversations…';
+        }
+      } catch (e) {}
+      function showBootDiagnostic(detail) {
+        var root = document.getElementById('app');
+        if (!root || root.getAttribute('data-boot') !== 'skeleton') return;
+        var slot = document.getElementById('boot-status');
+        if (!slot) return;
+        slot.textContent = isEnBoot
+          ? 'Frontend boot error: ' + String(detail || 'Unknown error')
+          : '前端脚本初始化异常：' + String(detail || '未知错误');
+      }
+      window.addEventListener(
+        'error',
+        function (ev) {
+          var t = ev && ev.target;
+          if (t && t.tagName === 'SCRIPT') {
+            showBootDiagnostic(isEnBoot ? 'Failed to load script asset' : '脚本资源加载失败');
+            return;
+          }
+          if (ev && ev.message) {
+            showBootDiagnostic(ev.message);
+          }
+        },
+        true
+      );
+      window.addEventListener('unhandledrejection', function (ev) {
+        var r = ev && ev.reason;
+        showBootDiagnostic(
+          (r && (r.message || String(r))) ||
+            (isEnBoot ? 'Unhandled promise rejection' : 'Promise 未捕获异常')
+        );
+      });
+    })();
+  </script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "command": "node",
+  "args": ["main.mjs"],
+  "restart_policy": "always",
+  "display_name": "monowatch",
+  "description": "Local read-only telemetry side panel tracking subscription payback ROI, per-model API value & speed, dynamic context waterline, cloud control events, canary cohorts, /btw branches, and Swarm trees.",
+  "has_web_ui": true,
+  "agent_permissions": {
+    "allows_user_interactions": false
+  },
+  "ui_config": {
+    "display_name": "monowatch",
+    "views": [
+      {
+        "path": "/",
+        "entrypoint": "SIDECAR_UI_ENTRYPOINT_AUX_PANE",
+        "title": "monowatch"
+      }
+    ]
+  }
+}

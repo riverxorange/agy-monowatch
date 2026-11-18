@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" fill="none">
+  <title>monowatch</title>
+  <style>
+    .mw-face { fill: #FCFCFA; stroke: #141413; }
+    .mw-ink { fill: #141413; }
+    .mw-hand { stroke: #141413; }
+    .mw-free { fill: #D5D5CE; }
+    .mw-mint { fill: #109868; }
+    @media (prefers-color-scheme: dark) {
+      .mw-face { fill: #141413; stroke: #F0F0EB; }
+      .mw-ink { fill: #F0F0EB; }
+      .mw-hand { stroke: #F0F0EB; }
+      .mw-free { fill: #3E3E3A; }
+      .mw-mint { fill: #20B884; }
+    }
+  </style>
+  <rect class="mw-ink" x="233" y="109" width="13" height="38" rx="5"/>
+  <circle class="mw-face" cx="124" cy="128" r="106" stroke-width="13"/>
+  <circle class="mw-ink" cx="124" cy="52" r="8.8"/>
+  <circle class="mw-ink" cx="162" cy="62.2" r="8.8"/>
+  <circle class="mw-ink" cx="189.8" cy="90" r="8.8"/>
+  <circle class="mw-ink" cx="200" cy="128" r="8.8"/>
+  <circle class="mw-ink" cx="189.8" cy="166" r="8.8"/>
+  <circle class="mw-ink" cx="162" cy="193.8" r="8.8"/>
+  <circle class="mw-ink" cx="124" cy="204" r="8.8"/>
+  <circle class="mw-ink" cx="86" cy="193.8" r="8.8"/>
+  <circle class="mw-mint" cx="58.2" cy="166" r="11.5"/>
+  <circle class="mw-free" cx="48" cy="128" r="6.8"/>
+  <circle class="mw-free" cx="58.2" cy="90" r="6.8"/>
+  <circle class="mw-free" cx="86" cy="62.2" r="6.8"/>
+  <line class="mw-hand" x1="124" y1="128" x2="91.2" y2="109.1" stroke-width="10.8" stroke-linecap="round"/>
+  <line class="mw-hand" x1="124" y1="128" x2="171.2" y2="100.7" stroke-width="8.8" stroke-linecap="round"/>
+  <circle class="mw-ink" cx="124" cy="128" r="10.2"/>
+  <circle class="mw-mint" cx="124" cy="128" r="4.6"/>
+</svg>

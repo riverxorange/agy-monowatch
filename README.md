@@ -22,6 +22,18 @@
 
 ## Install
 
+### Option 1: Let Antigravity install it (Agentic)
+
+Send this prompt to Antigravity in a chat:
+
+```text
+Install https://github.com/riverxorange/agy-monowatch as a plugin, enable it, and open monowatch for me.
+```
+
+Once installed, you can mention `@[plugin:monowatch]` in any conversation (or ask Antigravity to open it) to bring up the dashboard.
+
+### Option 2: Manual install
+
 ```bash
 git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/monowatch
 ```

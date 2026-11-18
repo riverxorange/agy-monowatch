@@ -22,6 +22,18 @@
 
 ## 安装
 
+### 方式一：让 Antigravity 自动安装（推荐）
+
+直接在 Antigravity 会话中发送下面这段话：
+
+```text
+帮我安装 https://github.com/riverxorange/agy-monowatch 这个插件，启用并在当前会话中打开它。
+```
+
+安装完成后，你可以在任意会话中输入 `@[plugin:monowatch]` 引用此插件，或直接让 Antigravity 打开看板。
+
+### 方式二：手动安装
+
 ```bash
 git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/monowatch
 ```

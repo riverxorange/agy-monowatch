@@ -3,7 +3,7 @@
  *
  * Design guarantees:
  * - Zero telemetry uploads: only performs anonymous GET requests to GitHub (`plugin.json` / tarball).
- * - Low frequency & silent failure: caches results in `update_cache.json` (6h success TTL, 2h error TTL).
+ * - Low frequency & silent failure: caches results in `update_cache.json` (1h success TTL, 30m error TTL).
  * - Safe self-update: mutates `pluginRoot` ONLY when installed under `.gemini/config/plugins/`;
  *   uses `git pull --ff-only` when `.git` is present and clean, or pure-Node `.tar.gz` extraction
  *   (USTAR + PAX headers) for ZIP/directory installs without requiring `git` or `tar` binaries.
@@ -21,8 +21,8 @@ import { dirname, join, normalize, relative, resolve, sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 
 const DEFAULT_REPO_SLUG = 'riverxorange/agy-monowatch';
-const SUCCESS_TTL_MS = 6 * 3600 * 1000;
-const ERROR_TTL_MS = 2 * 3600 * 1000;
+const SUCCESS_TTL_MS = 1 * 3600 * 1000;
+const ERROR_TTL_MS = 30 * 60 * 1000;
 const MAX_TARBALL_BYTES = 16 * 1024 * 1024;
 
 export function parseRepoSlug(repoField) {
@@ -339,10 +339,6 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
           checkInFlight = null;
         }
       })();
-    }
-
-    if (!force && cached) {
-      return buildStatusPayload(local, cached);
     }
 
     const fresh = await checkInFlight;

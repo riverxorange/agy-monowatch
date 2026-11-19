@@ -52,7 +52,7 @@ git clone https://github.com/riverxorange/agy-monowatch.git "$HOME\.gemini\confi
 
 ## 隐私
 
-monowatch 只发出一种网络请求：向 GitHub 检查版本，最多每 6 小时一次，可在设置中关闭。
+monowatch 只发出一种网络请求：向 GitHub 检查版本，最多每小时一次，可在设置中关闭。
 
 ## 开发
 

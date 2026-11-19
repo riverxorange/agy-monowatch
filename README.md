@@ -52,7 +52,7 @@ When a new version is available, an **Update** link appears in the panel header.
 
 ## Privacy
 
-monowatch makes one kind of network request: a version check against GitHub at most every 6 hours. You can turn it off in Settings.
+monowatch makes one kind of network request: a version check against GitHub at most once an hour. You can turn it off in Settings.
 
 ## Development
 

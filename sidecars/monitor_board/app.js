@@ -1072,7 +1072,7 @@ setInterval(() => {
   if (document.visibilityState === 'visible') {
     checkPluginUpdate(false);
   }
-}, 6 * 3600 * 1000);
+}, 1 * 3600 * 1000);
 if (document.readyState === 'complete') {
   setTimeout(() => {
     startRealtimeSync();

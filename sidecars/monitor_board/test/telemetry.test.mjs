@@ -225,6 +225,18 @@ test('Pricing registry disambiguates Claude Sonnet/Opus, resolves M669, honors o
     assert.equal(worker.slug, 'gemini-flash-worker-agy');
     assert.equal(worker.inputRate, 1.5);
 
+    const neonMed = registry.resolveModelBySlugOrText('gemini-4-neon', 1533);
+    assert.equal(neonMed.slug, 'gemini-4-neon-medium');
+    assert.equal(neonMed.shortName, 'Neon');
+    assert.equal(neonMed.inputRate, 3.0);
+    assert.equal(neonMed.cacheRate, 0.15);
+    assert.equal(neonMed.outputRate, 15.0);
+    assert.equal(registry.resolveStepRates(neonMed, 0, 250_000).inputRate, 3.0);
+
+    const neonOrch = registry.resolveModelBySlugOrText('gemini-pro-orchestrator-neon', 0);
+    assert.equal(neonOrch.slug, 'gemini-pro-orchestrator-neon');
+    assert.equal(neonOrch.fullName, 'Gemini 4 Neon (Orchestrator)');
+
     const carbon = registry.slugCatalog.get('gemini-4-carbon-high');
     const novNormal = registry.resolveStepRates(
       carbon,

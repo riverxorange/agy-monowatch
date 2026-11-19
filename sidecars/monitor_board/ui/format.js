@@ -623,7 +623,7 @@ export function resolveModelProvider(nameOrModel) {
   const s = String(nameOrModel).toLowerCase();
   if (/(claude|opus|sonnet|haiku|anthropic)/.test(s)) return 'claude';
   if (/(gpt|openai|o1-|o3-|o4-)/.test(s)) return 'openai';
-  if (/(gemini|carbon|argon|hydrogen|flash)/.test(s)) return 'gemini';
+  if (/(gemini|carbon|argon|hydrogen|neon|flash)/.test(s)) return 'gemini';
   return 'other';
 }
 

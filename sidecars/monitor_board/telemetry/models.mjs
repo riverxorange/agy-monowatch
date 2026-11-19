@@ -56,9 +56,9 @@ export const BASE_MODELS = [
     outputRate: 7.5,
   },
   {
-    enums: [1525],
-    placeholders: ['MODEL_PLACEHOLDER_M525'],
-    slugs: ['gemini-4-hydrogen-high'],
+    enums: [1525, 1530],
+    placeholders: ['MODEL_PLACEHOLDER_M525', 'MODEL_PLACEHOLDER_M530'],
+    slugs: ['gemini-4-hydrogen-high', 'gemini-4-hydrogen-tiered-high'],
     slug: 'gemini-4-hydrogen-high',
     shortName: 'Hydrogen',
     fullName: 'Gemini 4 Hydrogen (High)',
@@ -96,6 +96,66 @@ export const BASE_MODELS = [
     inputRate: 1.5,
     cacheRate: 0.075,
     outputRate: 7.5,
+  },
+  {
+    enums: [],
+    placeholders: [],
+    slugs: [
+      'gemini-4-neon-xhigh',
+      'gemini-4-neon-extra-high',
+      'gemini-4-neon-extra_high',
+    ],
+    slug: 'gemini-4-neon-xhigh',
+    shortName: 'Neon',
+    fullName: 'Gemini 4 Neon (XHigh)',
+    provider: 'gemini',
+    softLimit: 512_000,
+    maxWindow: 1_048_576,
+    inputRate: 3.0,
+    cacheRate: 0.15,
+    outputRate: 15.0,
+  },
+  {
+    enums: [],
+    placeholders: [],
+    slugs: ['gemini-4-neon-high'],
+    slug: 'gemini-4-neon-high',
+    shortName: 'Neon',
+    fullName: 'Gemini 4 Neon (High)',
+    provider: 'gemini',
+    softLimit: 512_000,
+    maxWindow: 1_048_576,
+    inputRate: 3.0,
+    cacheRate: 0.15,
+    outputRate: 15.0,
+  },
+  {
+    enums: [1533],
+    placeholders: ['MODEL_PLACEHOLDER_M533'],
+    slugs: ['gemini-4-neon-medium', 'gemini-4-neon'],
+    slug: 'gemini-4-neon-medium',
+    shortName: 'Neon',
+    fullName: 'Gemini 4 Neon (Medium)',
+    provider: 'gemini',
+    softLimit: 512_000,
+    maxWindow: 1_048_576,
+    inputRate: 3.0,
+    cacheRate: 0.15,
+    outputRate: 15.0,
+  },
+  {
+    enums: [],
+    placeholders: [],
+    slugs: ['gemini-4-neon-low'],
+    slug: 'gemini-4-neon-low',
+    shortName: 'Neon',
+    fullName: 'Gemini 4 Neon (Low)',
+    provider: 'gemini',
+    softLimit: 512_000,
+    maxWindow: 1_048_576,
+    inputRate: 3.0,
+    cacheRate: 0.15,
+    outputRate: 15.0,
   },
   {
     enums: [1427],
@@ -186,6 +246,20 @@ export const BASE_MODELS = [
     cacheRate: 0.1,
     outputRate: 10.0,
     over200k: GEMINI_PRO_OVER_200K,
+  },
+  {
+    enums: [],
+    placeholders: [],
+    slugs: ['gemini-pro-orchestrator-neon'],
+    slug: 'gemini-pro-orchestrator-neon',
+    shortName: 'Neon',
+    fullName: 'Gemini 4 Neon (Orchestrator)',
+    provider: 'gemini',
+    softLimit: 512_000,
+    maxWindow: 1_048_576,
+    inputRate: 3.0,
+    cacheRate: 0.15,
+    outputRate: 15.0,
   },
   {
     enums: [1667],
@@ -975,6 +1049,9 @@ export function createPricingRegistry({
         return slugCatalog.get('gemini-flash-worker-agy');
       }
       if (lower.includes('orchestrator')) {
+        if (lower.includes('neon')) {
+          return slugCatalog.get('gemini-pro-orchestrator-neon');
+        }
         if (lower.includes('argon')) {
           return slugCatalog.get('gemini-pro-orchestrator-argon');
         }
@@ -994,6 +1071,12 @@ export function createPricingRegistry({
       }
       if (lower.includes('gpt-oss')) {
         return slugCatalog.get('gpt-oss-120b-medium');
+      }
+      if (lower.includes('neon')) {
+        if (lower.includes('xhigh')) return slugCatalog.get('gemini-4-neon-xhigh');
+        if (lower.includes('high')) return slugCatalog.get('gemini-4-neon-high');
+        if (lower.includes('low')) return slugCatalog.get('gemini-4-neon-low');
+        return slugCatalog.get('gemini-4-neon-medium');
       }
       if (lower.includes('hydrogen')) {
         if (lower.includes('xhigh')) return slugCatalog.get('gemini-4-hydrogen-xhigh');
@@ -1054,7 +1137,7 @@ export function createPricingRegistry({
       provider = 'openai';
     } else if (
       apiProvider === 24 ||
-      /gemini|flash|pro|argon|carbon|hydrogen|orchestrator/.test(combinedHint)
+      /gemini|flash|pro|argon|carbon|hydrogen|neon|orchestrator/.test(combinedHint)
     ) {
       provider = 'gemini';
     }

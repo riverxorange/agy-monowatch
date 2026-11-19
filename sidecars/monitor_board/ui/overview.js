@@ -183,7 +183,7 @@ function nodeDailyModels(n) {
 
 function modelFamilyName(name) {
   const s = String(name || '').trim();
-  const orchMatch = s.match(/^Orchestrator\s*\((Carbon|Argon|Hydrogen)\)$/i);
+  const orchMatch = s.match(/^Orchestrator\s*\((Carbon|Argon|Hydrogen|Neon)\)$/i);
   if (orchMatch) {
     const fam = orchMatch[1].charAt(0).toUpperCase() + orchMatch[1].slice(1).toLowerCase();
     return `Gemini 4 ${fam}`;

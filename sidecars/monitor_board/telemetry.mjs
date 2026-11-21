@@ -7,6 +7,7 @@
  */
 
 export { createTelemetryEngine } from './telemetry/engine.mjs';
+export { createUsageLedger } from './telemetry/ledger.mjs';
 export {
   BASE_MODELS,
   DEFAULT_IMAGE_MODEL,

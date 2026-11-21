@@ -27,6 +27,7 @@ Antigravity 没有公开的用量接口，相关数据分散在本地的 SQLite�
 | [main.mjs](../sidecars/monitor_board/main.mjs) | HTTP 服务、鉴权、设置存储、文件监听、自动重启 |
 | [updater.mjs](../sidecars/monitor_board/updater.mjs) | 版本检查与自更新 |
 | [telemetry/engine.mjs](../sidecars/monitor_board/telemetry/engine.mjs) | 组装快照、会话树、冷热分层与历史归档 |
+| [telemetry/ledger.mjs](../sidecars/monitor_board/telemetry/ledger.mjs) | 本地持久化用量账本（`usage_ledger.sqlite`），保留已删除会话的历史汇总 |
 | [telemetry/discovery.mjs](../sidecars/monitor_board/telemetry/discovery.mjs) | 发现会话、父子关系、项目、子代理与 Swarm 成员 |
 | [telemetry/metrics.mjs](../sidecars/monitor_board/telemetry/metrics.mjs) | 单会话的 Token、费用、上下文、耗时与事件 |
 | [telemetry/turns.mjs](../sidecars/monitor_board/telemetry/turns.mjs) | 逐轮明细、压缩摘要 |
@@ -56,6 +57,7 @@ Antigravity 没有公开的用量接口，相关数据分散在本地的 SQLite�
 | `<appData>/antigravity_state.pbtxt` | 新建空会话时，读取当前默认模型 | models |
 | `<sidecar_data>/data/pricing_override.json` | 用户自定义单价，热加载 | models |
 | `<sidecar_data>/data/settings.json` | 订阅方案、计费日、语言、更新检测开关（写于独立沙盒目录） | main |
+| `<sidecar_data>/data/usage_ledger.sqlite` | 本地持久化用量账本：缓存根会话树汇总，在会话被宿主删除后保留其历史费用与按天明细（写于独立沙盒目录） | ledger |
 | `<sidecar_data>/data/update_cache.json` | GitHub 版本检查缓存（6 小时 TTL，写于独立沙盒目录） | updater |
 
 ---
@@ -130,7 +132,7 @@ Antigravity 没有公开的用量接口，相关数据分散在本地的 SQLite�
 1. 只统计 `idx >= effectiveMinStepIdx`、状态为 `3` 或 `5` 的 `step_type = 15`（以及 `23`）步骤。
 2. 如果只记录了 thinking 或 response 之一，用 `output = thinking + response` 补齐另一项。
 3. 缓存命中率统一按 `cacheRead / (input + cacheRead)` 计算。
-4. transcript 里存在、但 `steps` 里没有的重试分支消耗，单独记为 `retryBranchDeltaUsd`，不并入主账。
+4. `transcript.jsonl` 中因中途撤销/重问而被回滚覆盖的旧分支步骤（自动扫描上限 16 MB，去重保护防止同一步重复 flush 误算），会自动并入主账的 `selfUsd` / `treeUsd` / `tokens` / `daily` / `byModel`，同时在 `cost.retryBranchDeltaUsd` 与 `cost.retryBranchStepCount` 单独标明。
 5. 如果 `<id>.db` 还不存在，就从 transcript 的事件汇总。
 
 ### 4.2 等效 API 价值
@@ -240,7 +242,7 @@ Antigravity 没有公开的用量接口，相关数据分散在本地的 SQLite�
 | `upstream_retry` | `API error (attempt N)`、超时、连接中断等 | 记录重试次数 |
 | `tool_error` | `step_type = 132` 且状态为 `6` 或 `7` | 视为正常试错，不在「事件」页签展示 |
 
-早期 IDE 会把正常的工具调用写成 `step_type = 17`，这类记录在解码时直接忽略。事件行在逐轮明细里是 `kind = 'incident'`，不计入 `llmStepCount` 和轮次加总，保证 `turnsSum === selfUsd`。
+早期 IDE 会把正常的工具调用写成 `step_type = 17`，这类记录在解码时直接忽略。事件行在逐轮明细里是 `kind = 'incident'`，不计入 `llmStepCount` 和轮次加总，保证 `turnsSum === selfUsd`。被撤销的旧分支步骤（见 4.1 第 4 条）不出现在逐轮明细里，所以存在撤销重问时是 `turnsSum === selfUsd - retryBranchDeltaUsd`。
 
 ### 5.4 其他归属
 

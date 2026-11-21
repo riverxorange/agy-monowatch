@@ -982,9 +982,14 @@ function renderDetailTurns(shell, threadId, cachedDetail, isZeroHostSession = fa
     setDisplay(shell.turnsMoreBtn, false);
     setText(
       shell.turnsEmpty,
-      threadId === state.hostConvId
-        ? tr('等待首条消息产生用量数据', 'Waiting for first message')
-        : tr('当前会话暂无推理用量记录', 'No inference turns recorded in this conversation')
+      detail?.isDeletedFromLedger || detail?.thread?.isDeleted
+        ? tr(
+            '该会话已在 Antigravity 中删除，当前展示本地账本保留的汇总用量',
+            'Deleted in Antigravity — showing usage preserved in the local ledger'
+          )
+        : threadId === state.hostConvId
+          ? tr('等待首条消息产生用量数据', 'Waiting for first message')
+          : tr('当前会话暂无推理用量记录', 'No inference turns recorded in this conversation')
     );
     setDisplay(shell.turnsEmpty, true, 'block');
     return;

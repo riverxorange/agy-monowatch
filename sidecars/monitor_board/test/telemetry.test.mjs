@@ -1010,3 +1010,456 @@ test('Updater semver comparator, repo slug parser, and USTAR+PAX tar extractor r
   );
   assert.equal(entries[0].data.toString('utf8'), '{"name":"monowatch"}');
 });
+
+test('End-to-end reverted retry branches from transcript.jsonl are merged into primary cost, tokens, and daily breakdowns', () => {
+  const root = mkdtempSync(join(tmpdir(), 'monowatch-revert-'));
+  const appData = join(root, 'antigravity');
+  const convDir = join(appData, 'conversations');
+  const convId = 'aaaaaaaa-1111-4111-8111-111111111111';
+  const logsDir = join(appData, 'brain', convId, '.system_generated', 'logs');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true });
+
+  let engine = null;
+  try {
+    const sumDb = new DatabaseSync(join(appData, 'conversation_summaries.db'));
+    sumDb.exec(`
+      CREATE TABLE conversation_summaries (
+        conversation_id TEXT PRIMARY KEY,
+        title TEXT, preview TEXT, step_count INTEGER, last_modified_time TEXT,
+        workspace_uris TEXT, status TEXT, source TEXT, project_id TEXT, app_data_dir TEXT,
+        agent_name TEXT, parent_conversation_id TEXT, nesting_depth INTEGER,
+        not_fully_idle INTEGER, killed INTEGER
+      );
+    `);
+    sumDb
+      .prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        convId,
+        'Revert Retry Test',
+        'Ask again',
+        2,
+        '2026-11-21T10:05:00.000Z',
+        '[]',
+        'CASCADE_RUN_STATUS_IDLE',
+        'CORTEX_TRAJECTORY_SOURCE_CASCADE',
+        '',
+        'antigravity',
+        '',
+        '',
+        0,
+        0,
+        0
+      );
+    sumDb.close();
+
+    // SQLite only contains the surviving branch after revert (step 1: $0.24 on M528)
+    // M528 rates: input $1.50/M, cache $0.075/M, output $7.50/M
+    // 100k in ($0.15) + 200k cache ($0.015) + 10k out ($0.075) = $0.24
+    const db = new DatabaseSync(join(convDir, `${convId}.db`));
+    db.exec(`
+      CREATE TABLE trajectory_meta (trajectory_id TEXT, trajectory_type INTEGER);
+      CREATE TABLE parent_references (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    `);
+    db.prepare('INSERT INTO trajectory_meta VALUES (?, ?)').run('traj-revert-1', 4);
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?, ?, ?)').run(
+      0,
+      14,
+      3,
+      buildStepMetadataBlob({ t1: 1_795_168_800, t6: 0, t7: 0 }),
+      buildUserPayloadBlob('Edited prompt')
+    );
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?, ?, ?)').run(
+      1,
+      15,
+      3,
+      buildStepMetadataBlob({
+        t1: 1_795_168_801,
+        t6: 1_795_168_802,
+        t7: 1_795_168_805,
+        requestedEnum: 1528,
+        modelEnum: 1528,
+        inputTokens: 100_000,
+        cacheReadTokens: 200_000,
+        outputTokens: 10_000,
+      }),
+      Buffer.alloc(0)
+    );
+    db.close();
+
+    // Append-only transcript.jsonl has 2 reverted steps (step 1 & step 3, each $0.24)
+    // followed by the new branch step 1 (plus a duplicate flush of the exact same new step 1)
+    const lines = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-21T10:00:05.000Z',
+        input_tokens: 100_000,
+        cache_read_tokens: 200_000,
+        output_tokens: 10_000,
+      }),
+      JSON.stringify({
+        step_index: 3,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-21T10:01:05.000Z',
+        input_tokens: 100_000,
+        cache_read_tokens: 200_000,
+        output_tokens: 10_000,
+      }),
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-21T10:02:05.000Z',
+        input_tokens: 100_000,
+        cache_read_tokens: 200_000,
+        output_tokens: 10_000,
+      }),
+      // Duplicate flush of the exact same surviving step 1 (must NOT be double-counted)
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: '2026-11-21T10:02:05.000Z',
+        input_tokens: 100_000,
+        cache_read_tokens: 200_000,
+        output_tokens: 10_000,
+      }),
+    ];
+    writeFileSync(join(logsDir, 'transcript.jsonl'), `${lines.join('\n')}\n`, 'utf8');
+
+    engine = createTelemetryEngine({ appDataDirs: [appData], includeSiblingSurfaces: false });
+    const snap = engine.getSnapshot();
+    assert.equal(snap.threads.length, 1);
+
+    const node = snap.threads[0];
+    // Surviving ($0.24) + 2 reverted steps ($0.48) = $0.72
+    assert.equal(node.cost.retryBranchStepCount, 2);
+    assert.equal(node.cost.retryBranchDeltaUsd, 0.48);
+    assert.equal(node.cost.selfUsd, 0.72);
+    assert.equal(node.cost.treeUsd, 0.72);
+    assert.equal(node.tokens.input, 300_000);
+    assert.equal(node.tokens.cacheRead, 600_000);
+    assert.equal(node.tokens.output, 30_000);
+
+    // Daily total must also equal $0.72
+    const dailyUsd = Object.values(node.cost.daily).reduce((acc, v) => acc + (Number(v?.[0]) || 0), 0);
+    assert.ok(Math.abs(dailyUsd - 0.72) < 1e-6);
+    assert.equal(node.cost.byModel[0].costUsd, 0.72);
+
+    const sumDaily = (i) =>
+      Object.values(node.cost.daily).reduce((acc, v) => acc + (Number(v?.[i]) || 0), 0);
+    assert.equal(sumDaily(1), 300_000);
+    assert.equal(sumDaily(2), 600_000);
+    assert.equal(sumDaily(3), 30_000);
+    assert.ok(Math.abs(sumDaily(10) + sumDaily(11) + sumDaily(12) - 0.72) < 1e-6);
+    const modelDaily = Object.values(node.cost.dailyModels).flatMap((day) => Object.values(day));
+    assert.equal(modelDaily.reduce((acc, v) => acc + v[2], 0), 600_000);
+    assert.equal(modelDaily.reduce((acc, v) => acc + v[3], 0), 30_000);
+    assert.equal(node.tokens.thinking + node.tokens.response, node.tokens.output);
+
+    const detail = engine.getThreadDetail(convId);
+    const turnsSum = detail.turns.reduce((acc, t) => acc + (Number(t.costUsd) || 0), 0);
+    assert.ok(Math.abs(turnsSum - (node.cost.selfUsd - node.cost.retryBranchDeltaUsd)) < 1e-6);
+  } finally {
+    engine?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('Exact duplicate re-flush of an earlier transcript step does not evict later live steps as reverted', () => {
+  const root = mkdtempSync(join(tmpdir(), 'monowatch-reflush-'));
+  const appData = join(root, 'antigravity');
+  const convDir = join(appData, 'conversations');
+  const convId = 'dddddddd-3333-4333-8333-333333333333';
+  const logsDir = join(appData, 'brain', convId, '.system_generated', 'logs');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(logsDir, { recursive: true });
+
+  let engine = null;
+  try {
+    const sumDb = new DatabaseSync(join(appData, 'conversation_summaries.db'));
+    sumDb.exec(`
+      CREATE TABLE conversation_summaries (
+        conversation_id TEXT PRIMARY KEY,
+        title TEXT, preview TEXT, step_count INTEGER, last_modified_time TEXT,
+        workspace_uris TEXT, status TEXT, source TEXT, project_id TEXT, app_data_dir TEXT,
+        agent_name TEXT, parent_conversation_id TEXT, nesting_depth INTEGER,
+        not_fully_idle INTEGER, killed INTEGER
+      );
+    `);
+    sumDb
+      .prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(
+        convId,
+        'Duplicate Flush Test',
+        'Hello',
+        4,
+        '2026-11-21T10:05:00.000Z',
+        '[]',
+        'CASCADE_RUN_STATUS_IDLE',
+        'CORTEX_TRAJECTORY_SOURCE_CASCADE',
+        '',
+        'antigravity',
+        '',
+        '',
+        0,
+        0,
+        0
+      );
+    sumDb.close();
+
+    const db = new DatabaseSync(join(convDir, `${convId}.db`));
+    db.exec(`
+      CREATE TABLE trajectory_meta (trajectory_id TEXT, trajectory_type INTEGER);
+      CREATE TABLE parent_references (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    `);
+    db.prepare('INSERT INTO trajectory_meta VALUES (?, ?)').run('traj-reflush-1', 4);
+    const insertStep = db.prepare('INSERT INTO steps VALUES (?, ?, ?, ?, ?)');
+    insertStep.run(
+      0,
+      14,
+      3,
+      buildStepMetadataBlob({ t1: 1_795_168_800, t6: 0, t7: 0 }),
+      buildUserPayloadBlob('Hello')
+    );
+    for (const [idx, tSec] of [
+      [1, 1_795_168_801],
+      [3, 1_795_168_861],
+    ]) {
+      insertStep.run(
+        idx,
+        15,
+        3,
+        buildStepMetadataBlob({
+          t1: tSec,
+          t6: tSec + 1,
+          t7: tSec + 4,
+          requestedEnum: 1528,
+          modelEnum: 1528,
+          inputTokens: 100_000,
+          cacheReadTokens: 200_000,
+          outputTokens: 10_000,
+        }),
+        Buffer.alloc(0)
+      );
+    }
+    db.close();
+
+    const line = (stepIndex, createdAt) =>
+      JSON.stringify({
+        step_index: stepIndex,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: createdAt,
+        input_tokens: 100_000,
+        cache_read_tokens: 200_000,
+        output_tokens: 10_000,
+      });
+    const lines = [
+      line(1, '2026-11-21T10:00:05.000Z'),
+      line(3, '2026-11-21T10:01:05.000Z'),
+      line(1, '2026-11-21T10:00:05.000Z'),
+    ];
+    writeFileSync(join(logsDir, 'transcript.jsonl'), `${lines.join('\n')}\n`, 'utf8');
+
+    engine = createTelemetryEngine({ appDataDirs: [appData], includeSiblingSurfaces: false });
+    const snap = engine.getSnapshot();
+    assert.equal(snap.threads.length, 1);
+
+    const node = snap.threads[0];
+    assert.equal(node.cost.retryBranchStepCount, 0);
+    assert.equal(node.cost.retryBranchDeltaUsd, 0);
+    assert.equal(node.cost.selfUsd, 0.48);
+    assert.equal(node.tokens.input, 200_000);
+    assert.equal(node.tokens.cacheRead, 400_000);
+    assert.equal(node.tokens.output, 20_000);
+  } finally {
+    engine?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('End-to-end local usage ledger preserves deleted conversations across restarts without double-counting live ones', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'monowatch-ledger-'));
+  const appData = join(root, 'antigravity');
+  const sidecarData = join(root, 'sidecar_data');
+  const convDir = join(appData, 'conversations');
+  mkdirSync(convDir, { recursive: true });
+  mkdirSync(sidecarData, { recursive: true });
+
+  const convLive = 'bbbbbbbb-1111-4111-8111-111111111111';
+  const convDel = 'cccccccc-2222-4222-8222-222222222222';
+
+  const makeConvDb = (id, tSec) => {
+    const db = new DatabaseSync(join(convDir, `${id}.db`));
+    db.exec(`
+      CREATE TABLE trajectory_meta (trajectory_id TEXT, trajectory_type INTEGER);
+      CREATE TABLE parent_references (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE gen_metadata (idx INTEGER PRIMARY KEY, data BLOB);
+      CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, status INTEGER, metadata BLOB, step_payload BLOB);
+    `);
+    db.prepare('INSERT INTO trajectory_meta VALUES (?, ?)').run(`traj-${id}`, 4);
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?, ?, ?)').run(
+      0,
+      14,
+      3,
+      buildStepMetadataBlob({ t1: tSec, t6: 0, t7: 0 }),
+      buildUserPayloadBlob('Hello')
+    );
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?, ?, ?)').run(
+      1,
+      15,
+      3,
+      buildStepMetadataBlob({
+        t1: tSec + 1,
+        t6: tSec + 2,
+        t7: tSec + 4,
+        requestedEnum: 1528,
+        modelEnum: 1528,
+        inputTokens: 100_000,
+        cacheReadTokens: 200_000,
+        outputTokens: 10_000,
+      }),
+      Buffer.alloc(0)
+    );
+    db.close();
+  };
+
+  let engine1 = null;
+  let engine2 = null;
+  try {
+    const sumDb = new DatabaseSync(join(appData, 'conversation_summaries.db'));
+    sumDb.exec(`
+      CREATE TABLE conversation_summaries (
+        conversation_id TEXT PRIMARY KEY,
+        title TEXT, preview TEXT, step_count INTEGER, last_modified_time TEXT,
+        workspace_uris TEXT, status TEXT, source TEXT, project_id TEXT, app_data_dir TEXT,
+        agent_name TEXT, parent_conversation_id TEXT, nesting_depth INTEGER,
+        not_fully_idle INTEGER, killed INTEGER
+      );
+    `);
+    const ins = sumDb.prepare(
+      'INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    ins.run(
+      convLive,
+      'Live Session',
+      'Hello',
+      2,
+      '2026-11-21T10:10:00.000Z',
+      '[]',
+      'CASCADE_RUN_STATUS_IDLE',
+      'CORTEX_TRAJECTORY_SOURCE_CASCADE',
+      '',
+      'antigravity',
+      '',
+      '',
+      0,
+      0,
+      0
+    );
+    ins.run(
+      convDel,
+      'Soon Deleted Session',
+      'Hello',
+      2,
+      '2026-11-21T10:05:00.000Z',
+      '[]',
+      'CASCADE_RUN_STATUS_IDLE',
+      'CORTEX_TRAJECTORY_SOURCE_CASCADE',
+      '',
+      'antigravity',
+      '',
+      '',
+      0,
+      0,
+      0
+    );
+    sumDb.close();
+
+    makeConvDb(convLive, 1_795_169_400);
+    makeConvDb(convDel, 1_795_169_100);
+
+    engine1 = createTelemetryEngine({
+      appDataDirs: [appData],
+      sidecarDataDir: sidecarData,
+      includeSiblingSurfaces: false,
+    });
+
+    const snap1 = engine1.getSnapshot();
+    assert.equal(snap1.threads.length, 2);
+    assert.equal(snap1.totals.costUsd, 0.48);
+
+    // Simulate Antigravity permanently deleting `convDel`
+    const sumDb2 = new DatabaseSync(join(appData, 'conversation_summaries.db'));
+    sumDb2.prepare('DELETE FROM conversation_summaries WHERE conversation_id = ?').run(convDel);
+    sumDb2.close();
+    rmSync(join(convDir, `${convDel}.db`), { force: true });
+
+    const archiveReady = new Promise((resolve) => {
+      const off = engine1.onArchiveReady(() => {
+        off();
+        resolve();
+      });
+    });
+
+    engine1.invalidate();
+    engine1.getSnapshot();
+    await archiveReady;
+
+    const snap2 = engine1.getSnapshot();
+    assert.equal(snap2.threads.length, 1);
+    assert.equal(snap2.threads[0].id, convLive);
+    assert.equal(snap2.totals.costUsd, 0.24);
+    assert.equal(snap2.archive.deletedCount, 1);
+    assert.equal(snap2.archive.deletedUsd, 0.24);
+    assert.equal(snap2.archive.count, 1);
+
+    const archivedList = engine1.listArchive({ scope: 'all' });
+    assert.equal(archivedList.rows.length, 1);
+    assert.equal(archivedList.rows[0].id, convDel);
+    assert.equal(archivedList.rows[0].isDeleted, true);
+    assert.equal(archivedList.rows[0].cost.treeUsd, 0.24);
+
+    // Detail fallback for deleted session
+    const delDetail = engine1.getThreadDetail(convDel);
+    assert.ok(delDetail);
+    assert.equal(delDetail.isDeletedFromLedger, true);
+    assert.equal(delDetail.thread.isDeleted, true);
+    assert.equal(delDetail.thread.cost.treeUsd, 0.24);
+
+    engine1.close();
+    engine1 = null;
+
+    // Restart engine from disk and verify ledger persists without double-counting `convLive`
+    engine2 = createTelemetryEngine({
+      appDataDirs: [appData],
+      sidecarDataDir: sidecarData,
+      includeSiblingSurfaces: false,
+    });
+    const archiveReady2 = new Promise((resolve) => {
+      const off = engine2.onArchiveReady(() => {
+        off();
+        resolve();
+      });
+    });
+    engine2.getSnapshot();
+    await archiveReady2;
+
+    const snap3 = engine2.getSnapshot();
+    assert.equal(snap3.threads.length, 1);
+    assert.equal(snap3.archive.deletedCount, 1);
+    assert.equal(snap3.archive.deletedUsd, 0.24);
+  } finally {
+    engine1?.close();
+    engine2?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

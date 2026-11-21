@@ -28,6 +28,7 @@ import { createDiscoveryStore, discoverAppDataDirs } from './discovery.mjs';
 import { cleanTurnPrompt, extractPromptFromStepPayload } from './proto.mjs';
 import { createMetricsAnalyzer } from './metrics.mjs';
 import { createTurnLedgerBuilder, readJsonlPromptMap } from './turns.mjs';
+import { createUsageLedger } from './ledger.mjs';
 
 function statusRank(status) {
   if (status === 'working') return 0;
@@ -185,6 +186,10 @@ export function createTelemetryEngine(options = {}) {
 
   metrics = createMetricsAnalyzer({ pricing, discovery });
   turnsBuilder = createTurnLedgerBuilder({ pricing, discovery, metrics });
+  const ledger = createUsageLedger({
+    sidecarDataDir,
+    ledgerPath: options.ledgerPath || '',
+  });
 
   function getFirstPromptDerivedTitle(convId, preferredDir, minStepIdx = 0) {
     const floorIdx = Math.max(0, Number(minStepIdx) || 0);
@@ -838,6 +843,8 @@ export function createTelemetryEngine(options = {}) {
   function rollupTreeNode(node) {
     if (node.children.length > 0) {
       let childrenUsd = 0;
+      let childRetryUsd = 0;
+      let childRetrySteps = 0;
       let childSaved = 0;
       let childIn = 0;
       let childOut = 0;
@@ -855,6 +862,8 @@ export function createTelemetryEngine(options = {}) {
       for (const child of node.children) {
         rollupTreeNode(child);
         childrenUsd += child.cost.treeUsd;
+        childRetryUsd += Number(child.cost.treeRetryBranchDeltaUsd ?? child.cost.retryBranchDeltaUsd) || 0;
+        childRetrySteps += Number(child.cost.treeRetryBranchStepCount ?? child.cost.retryBranchStepCount) || 0;
         childSaved += child._internal.treeSavedCacheUsd;
         childIn += child._internal.treeInputTokens;
         childOut += child._internal.treeOutputTokens;
@@ -912,6 +921,12 @@ export function createTelemetryEngine(options = {}) {
 
       node.cost.childrenUsd = round(childrenUsd, 6);
       node.cost.treeUsd = round(node.cost.selfUsd + childrenUsd, 6);
+      node.cost.treeRetryBranchDeltaUsd = round(
+        (Number(node.cost.retryBranchDeltaUsd) || 0) + childRetryUsd,
+        6
+      );
+      node.cost.treeRetryBranchStepCount =
+        (Number(node.cost.retryBranchStepCount) || 0) + childRetrySteps;
       node.cost.treeImageUsd = treeImageUsd;
       node.cost.treeByModel = mergedModels;
       {
@@ -1390,7 +1405,7 @@ export function createTelemetryEngine(options = {}) {
   function archiveKeyOf(rows) {
     let sum = 0;
     for (const r of rows) sum += Number(r.updatedAtMs) || 0;
-    return `${rows.length}:${sum}`;
+    return `${rows.length}:${sum}|L${ledger.getVersion()}`;
   }
 
   function resolveProjectKey(node) {
@@ -1406,6 +1421,8 @@ export function createTelemetryEngine(options = {}) {
   function createArchiveAcc() {
     return {
       count: 0,
+      deletedCount: 0,
+      deletedUsd: 0,
       catCounts: { conversation: 0, project: 0, cli: 0 },
       catDayCounts: { conversation: {}, project: {}, cli: {} },
       byCategory: { conversation: {}, project: {}, cli: {} },
@@ -1418,6 +1435,110 @@ export function createTelemetryEngine(options = {}) {
       canaryHits: [],
       list: [],
     };
+  }
+
+  function accumulateDeletedLedgerEntry(acc, entry) {
+    if (!entry) return;
+    const daily = entry.daily || {};
+    const cat = entry.category === 'cli' || entry.category === 'project' ? entry.category : 'conversation';
+    acc.count += 1;
+    acc.deletedCount += 1;
+    acc.deletedUsd += Number(entry.treeUsd) || 0;
+    acc.catCounts[cat] += 1;
+
+    const latestActiveDay = Object.keys(daily)
+      .filter((dk) => (Number(daily[dk]?.[0]) || 0) > 0)
+      .sort()
+      .pop();
+    if (latestActiveDay) {
+      acc.catDayCounts[cat][latestActiveDay] = (acc.catDayCounts[cat][latestActiveDay] || 0) + 1;
+    }
+    mergeDailyInto(acc.byCategory[cat], daily);
+    mergeDailyModelsInto(acc.models, entry.dailyModels || {});
+
+    if (cat === 'project') {
+      const pKey = entry.projectKey || entry.project?.id || entry.project?.name || '';
+      if (pKey) {
+        let pEntry = acc.byProject[pKey];
+        if (!pEntry) {
+          pEntry = {
+            id: entry.project?.id || pKey,
+            name: entry.project?.name || pKey,
+            workspaceUris: (entry.workspaceUris || []).slice(0, 2),
+            count: 0,
+            latestMs: 0,
+            spans: [],
+            daily: {},
+          };
+          acc.byProject[pKey] = pEntry;
+        }
+        pEntry.count += 1;
+        pEntry.latestMs = Math.max(pEntry.latestMs, Number(entry.updatedAtMs) || 0);
+        const activeDays = Object.keys(daily)
+          .filter((dk) => (Number(daily[dk]?.[0]) || 0) > 0)
+          .sort();
+        if (activeDays.length > 0 && pEntry.spans.length < 500) {
+          pEntry.spans.push(
+            activeDays.length === 1
+              ? activeDays[0]
+              : [activeDays[0], activeDays[activeDays.length - 1]]
+          );
+        }
+        mergeDailyInto(pEntry.daily, daily);
+      }
+    }
+
+    const wsKeys = new Set((entry.workspaceUris || []).map(normalizeWsKey).filter(Boolean));
+    for (const k of wsKeys) {
+      acc.byWorkspace[k] = mergeDailyInto(acc.byWorkspace[k] || {}, daily);
+    }
+
+    const tc = entry.issuesCounts || {};
+    for (const c of CLOUD_CATS) acc.issueCounts[c] += Number(tc[c]) || 0;
+    acc.wastedUsd += Number(entry.wastedUsd) || 0;
+
+    acc.list.push({
+      id: entry.id,
+      title: entry.title || entry.id.slice(0, 8),
+      kind: entry.kind || 'conversation',
+      category: cat,
+      surface: entry.surface || 'desktop',
+      project: entry.project ? { id: entry.project.id, name: entry.project.name } : null,
+      projectKey: entry.projectKey || '',
+      updatedAtMs: entry.updatedAtMs || 0,
+      deletedAtMs: entry.deletedAtMs || 0,
+      status: 'idle',
+      isArchived: true,
+      isDeleted: true,
+      childCount: entry.childCount || 0,
+      workspaceUris: entry.workspaceUris || [],
+      model: {
+        shortName: entry.model?.shortName || '',
+        fullName: entry.model?.fullName || '',
+        rawSlug: entry.model?.rawSlug || '',
+        softLimit: entry.model?.softLimit || 0,
+      },
+      cost: {
+        selfUsd: entry.selfUsd || 0,
+        treeUsd: entry.treeUsd || 0,
+        retryBranchDeltaUsd: entry.retryBranchUsd || 0,
+        retryBranchStepCount: entry.retryBranchSteps || 0,
+        treeDaily: daily,
+      },
+      tokens: {
+        input: entry.inputTokens || 0,
+        output: entry.outputTokens || 0,
+        cacheRead: entry.cacheReadTokens || 0,
+      },
+      waterline: {
+        currentTokens: entry.waterline?.currentTokens || 0,
+        cachedTokens: entry.waterline?.cachedTokens || 0,
+        freshTokens: entry.waterline?.freshTokens || 0,
+        softLimit: entry.waterline?.softLimit || 0,
+      },
+      issues: { treeCounts: { ...tc } },
+      children: [],
+    });
   }
 
   function extractNodeCanaryHits(n, rootNode, outArr) {
@@ -1485,6 +1606,8 @@ export function createTelemetryEngine(options = {}) {
       cost: {
         selfUsd: node.cost.selfUsd,
         treeUsd: node.cost.treeUsd,
+        retryBranchDeltaUsd: Number(node.cost.treeRetryBranchDeltaUsd ?? node.cost.retryBranchDeltaUsd) || 0,
+        retryBranchStepCount: Number(node.cost.treeRetryBranchStepCount ?? node.cost.retryBranchStepCount) || 0,
         treeDaily: node.cost.treeDaily || node.cost.daily || {},
       },
       tokens: {
@@ -1518,6 +1641,7 @@ export function createTelemetryEngine(options = {}) {
     const node = visit(row);
     if (!node) return;
     rollupTreeNode(node);
+    ledger.upsertRootNode(node, resolveProjectKey(node));
 
     const daily = node.cost.treeDaily || node.cost.daily || {};
     const cat = node.category === 'cli' || node.category === 'project' ? node.category : 'conversation';
@@ -1631,6 +1755,10 @@ export function createTelemetryEngine(options = {}) {
         setImmediate(step);
         return;
       }
+      const deletedEntries = ledger.getDeletedEntries(allRowsMap);
+      for (const dEntry of deletedEntries) {
+        accumulateDeletedLedgerEntry(acc, dEntry);
+      }
       acc.events.sort((a, b) => (Number(b.timestampSec) || 0) - (Number(a.timestampSec) || 0));
       acc.events.length = Math.min(acc.events.length, ARCHIVE_EVENT_CAP);
       acc.canaryHits.sort((a, b) => (Number(b.timestampSec) || 0) - (Number(a.timestampSec) || 0));
@@ -1639,6 +1767,8 @@ export function createTelemetryEngine(options = {}) {
       archiveState.list = acc.list;
       archiveState.data = {
         count: acc.count,
+        deletedCount: acc.deletedCount,
+        deletedUsd: round(acc.deletedUsd, 6),
         catCounts: acc.catCounts,
         catDayCounts: acc.catDayCounts,
         byCategory: acc.byCategory,
@@ -1732,6 +1862,20 @@ export function createTelemetryEngine(options = {}) {
     pricing.refreshIfNeeded();
     const allRowsMap = discovery.loadAllSummaryRows();
     const { roots, archiveRows, childrenByParent } = buildFullTreeSelection(allRowsMap, opts);
+
+    if (ledger.enabled) {
+      for (const root of roots) {
+        ledger.upsertRootNode(root, resolveProjectKey(root));
+      }
+      ledger.reconcileActiveIds(allRowsMap, {
+        allowMarkDeleted: true,
+        existsOnDiskFn: (id) => {
+          const p = discovery.probeConvOnDiskDirect(id);
+          return Boolean(p.dbFound || p.brainFound);
+        },
+      });
+    }
+
     scheduleArchiveBuild(allRowsMap, archiveRows, childrenByParent);
 
     let costUsd = 0;
@@ -2061,6 +2205,127 @@ export function createTelemetryEngine(options = {}) {
           turns: [],
         };
       } else {
+        const deletedEntry = ledger.getEntryById(targetId);
+        if (deletedEntry && deletedEntry.isDeleted) {
+          const denom = (deletedEntry.inputTokens || 0) + (deletedEntry.cacheReadTokens || 0);
+          const hitRatio = denom > 0 ? round((deletedEntry.cacheReadTokens || 0) / denom, 4) : 0;
+          const byModel = Array.isArray(deletedEntry.byModel) ? deletedEntry.byModel : [];
+          return {
+            isDeletedFromLedger: true,
+            thread: {
+              id: deletedEntry.id,
+              title: deletedEntry.title || deletedEntry.id.slice(0, 8),
+              kind: deletedEntry.kind || 'conversation',
+              category: deletedEntry.category || 'conversation',
+              surface: deletedEntry.surface || 'desktop',
+              project: deletedEntry.project || null,
+              workspaceUris: deletedEntry.workspaceUris || [],
+              status: 'idle',
+              isDeleted: true,
+              deletedAtMs: deletedEntry.deletedAtMs || 0,
+              updatedAtMs: deletedEntry.updatedAtMs || 0,
+              isGenerating: false,
+              generatingElapsedSec: 0,
+              model: {
+                slug: deletedEntry.model?.slug || '',
+                rawSlug: deletedEntry.model?.rawSlug || '',
+                shortName: deletedEntry.model?.shortName || '',
+                fullName: deletedEntry.model?.fullName || '',
+                provider: deletedEntry.model?.provider || 'gemini',
+                softLimit: deletedEntry.model?.softLimit || DEFAULT_SOFT_LIMIT,
+                maxWindow: deletedEntry.model?.maxWindow || DEFAULT_MAX_WINDOW,
+                modelCount: byModel.length,
+                distinctModelCount: byModel.length,
+                byModel,
+              },
+              tokens: {
+                input: deletedEntry.inputTokens || 0,
+                output: deletedEntry.outputTokens || 0,
+                thinking: 0,
+                response: deletedEntry.outputTokens || 0,
+                cacheRead: deletedEntry.cacheReadTokens || 0,
+                generatedImages: deletedEntry.generatedImages || 0,
+                cacheHitRatio: hitRatio,
+                treeInput: deletedEntry.inputTokens || 0,
+                treeOutput: deletedEntry.outputTokens || 0,
+                treeCacheRead: deletedEntry.cacheReadTokens || 0,
+                treeGeneratedImages: deletedEntry.generatedImages || 0,
+                treeCacheHitRatio: hitRatio,
+              },
+              cost: {
+                selfUsd: deletedEntry.selfUsd || 0,
+                treeUsd: deletedEntry.treeUsd || 0,
+                childrenUsd: round(Math.max(0, (deletedEntry.treeUsd || 0) - (deletedEntry.selfUsd || 0)), 6),
+                savedCacheUsd: deletedEntry.savedCacheUsd || 0,
+                retryBranchDeltaUsd: deletedEntry.retryBranchUsd || 0,
+                retryBranchStepCount: deletedEntry.retryBranchSteps || 0,
+                treeRetryBranchDeltaUsd: deletedEntry.retryBranchUsd || 0,
+                treeRetryBranchStepCount: deletedEntry.retryBranchSteps || 0,
+                daily: deletedEntry.daily || {},
+                treeDaily: deletedEntry.daily || {},
+                dailyModels: deletedEntry.dailyModels || {},
+                treeDailyModels: deletedEntry.dailyModels || {},
+                byModel,
+                treeByModel: byModel,
+              },
+              waterline: {
+                currentTokens: deletedEntry.waterline?.currentTokens || 0,
+                cachedTokens: deletedEntry.waterline?.cachedTokens || 0,
+                freshTokens: deletedEntry.waterline?.freshTokens || 0,
+                softLimit: deletedEntry.waterline?.softLimit || DEFAULT_SOFT_LIMIT,
+                softRatio: 0,
+                maxWindow: deletedEntry.model?.maxWindow || DEFAULT_MAX_WINDOW,
+                maxRatio: 0,
+                source: 'ledger',
+                limitSource: 'model_default',
+                breakdown: [],
+              },
+              timing: {
+                totalDurationSec: 0,
+                llmDurationSec: 0,
+                treeLlmDurationSec: 0,
+                avgTtftSec: 0,
+                latestTtftSec: 0,
+                isLiveTicking: false,
+              },
+              tps: {
+                live: 0,
+                stream: 0,
+                avgStream: 0,
+                activeChildAvg: 0,
+                treeBurn: 0,
+                rolling: 0,
+                latestDecode: 0,
+                latestTtftSec: 0,
+                latestE2e: 0,
+              },
+              compaction: { count: 0, hasSummary: false, latestStepIndex: -1 },
+              issues: {
+                total: 0,
+                treeTotal: 0,
+                wastedUsd: deletedEntry.wastedUsd || 0,
+                treeWastedUsd: deletedEntry.wastedUsd || 0,
+                counts: deletedEntry.issuesCounts || {},
+                treeCounts: deletedEntry.issuesCounts || {},
+                items: [],
+              },
+              children: [],
+            },
+            compaction: {
+              count: 0,
+              latestStepIndex: -1,
+              latestCreatedAt: null,
+              summaryMarkdown: '',
+              chapters: [],
+              history: [],
+            },
+            turnSummary: {
+              totalTurns: 0,
+              canaryTurnCount: 0,
+            },
+            turns: [],
+          };
+        }
         return null;
       }
     }
@@ -2190,6 +2455,7 @@ export function createTelemetryEngine(options = {}) {
   }
 
   function close() {
+    ledger.close();
     discovery.clearAll();
     metrics.clearAll();
     turnsBuilder.clearAll();

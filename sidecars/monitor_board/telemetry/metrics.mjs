@@ -18,6 +18,8 @@ import {
   fileSig,
   finalizeDaily,
   finalizeDailyModels,
+  mergeDailyInto,
+  mergeDailyModelsInto,
   openReadOnlyDb,
   parseDateMs,
   round,
@@ -438,11 +440,63 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
       }
 
       const byIdx = new Map();
+      const liveIdx = [];
+      const revertedSteps = [];
       for (const rec of lineStepRecords) {
-        for (const k of Array.from(byIdx.keys())) {
-          if (k > rec.idx) byIdx.delete(k);
+        const prev = byIdx.get(rec.idx);
+        const isDuplicateFlush =
+          prev &&
+          prev.createdAt === rec.createdAt &&
+          prev.inputTokens === rec.inputTokens &&
+          prev.cacheReadTokens === rec.cacheReadTokens &&
+          prev.outputTokens === rec.outputTokens;
+        if (isDuplicateFlush) continue;
+        while (liveIdx.length > 0 && liveIdx[liveIdx.length - 1] >= rec.idx) {
+          const k = liveIdx.pop();
+          revertedSteps.push(byIdx.get(k));
+          byIdx.delete(k);
         }
+        if (!Number.isNaN(rec.idx)) liveIdx.push(rec.idx);
         byIdx.set(rec.idx, rec);
+      }
+
+      let revertedInput = 0;
+      let revertedCache = 0;
+      let revertedOutput = 0;
+      let revertedInputUsd = 0;
+      let revertedCacheUsd = 0;
+      let revertedOutputUsd = 0;
+      let revertedUsd = 0;
+      let revertedSavedCacheUsd = 0;
+      let latestRevertedTimeSec = 0;
+      const revertedDailyMap = new Map();
+      const revertedDailyModelMap = new Map();
+      const modelLabel = m.fullName || m.shortName || m.slug;
+
+      for (const r of revertedSteps) {
+        const inp = r.inputTokens || 0;
+        const cr = r.cacheReadTokens || 0;
+        const out = r.outputTokens || 0;
+        const ts = r.stepTimeSec || 0;
+        if (ts > latestRevertedTimeSec) latestRevertedTimeSec = ts;
+        const rates = pricing.resolveStepRates(m, ts, inp + cr);
+        const sInUsd = (inp * rates.inputRate) / 1_000_000;
+        const sCrUsd = (cr * rates.cacheRate) / 1_000_000;
+        const sOutUsd = (out * rates.outputRate) / 1_000_000;
+        const sUsd = sInUsd + sCrUsd + sOutUsd;
+        const sSaved = (cr * Math.max(0, rates.inputRate - rates.cacheRate)) / 1_000_000;
+
+        revertedInput += inp;
+        revertedCache += cr;
+        revertedOutput += out;
+        revertedInputUsd += sInUsd;
+        revertedCacheUsd += sCrUsd;
+        revertedOutputUsd += sOutUsd;
+        revertedUsd += sUsd;
+        revertedSavedCacheUsd += sSaved;
+
+        addDaily(revertedDailyMap, ts, sUsd, inp, cr, out, sSaved, 0, sInUsd, sCrUsd, sOutUsd);
+        addDailyModel(revertedDailyModelMap, ts, modelLabel, sUsd, inp, cr, out);
       }
 
       parsed = {
@@ -450,6 +504,17 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
         allCache,
         allOutput,
         allJsonlUsd,
+        revertedStepCount: revertedSteps.length,
+        revertedInput,
+        revertedCache,
+        revertedOutput,
+        revertedInputUsd,
+        revertedCacheUsd,
+        revertedOutputUsd,
+        revertedUsd,
+        revertedSavedCacheUsd,
+        revertedDaily: finalizeDaily(revertedDailyMap, latestRevertedTimeSec),
+        revertedDailyModels: finalizeDailyModels(revertedDailyModelMap, latestRevertedTimeSec),
         mtimeMs: tSt ? tSt.mtimeMs : 0,
         canonicalSteps: Array.from(byIdx.values()).sort((a, b) => a.idx - b.idx),
       };
@@ -542,6 +607,10 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
         savedCacheUsd: 0,
         claudeCacheWriteEstUsd: 0,
         retryBranchDeltaUsd: 0,
+        retryBranchStepCount: 0,
+        retryBranchInput: 0,
+        retryBranchCacheRead: 0,
+        retryBranchOutput: 0,
         daily: {},
         dailyModels: {},
         byModel: [],
@@ -1785,6 +1854,10 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
         savedCacheUsd: round(savedCacheUsd, 6),
         claudeCacheWriteEstUsd: round(claudeCacheWriteEstUsd, 6),
         retryBranchDeltaUsd: 0,
+        retryBranchStepCount: 0,
+        retryBranchInput: 0,
+        retryBranchCacheRead: 0,
+        retryBranchOutput: 0,
         daily: finalizeDaily(dailyMap, latestStepTimeSec),
         dailyModels: finalizeDailyModels(dailyModelMap, latestStepTimeSec),
         byModel,
@@ -1920,11 +1993,34 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
       isPostCompactionEstimate = true;
     }
     const currentTokens = cachedTokens + freshTokens;
-    const denom = inTok + crTok;
-    const cacheHitRatio = denom > 0 ? round(crTok / denom, 4) : 0;
+    const revIn = jsonl.revertedInput || 0;
+    const revCr = jsonl.revertedCache || 0;
+    const revOut = jsonl.revertedOutput || 0;
+    const revSteps = jsonl.revertedStepCount || 0;
+    const revInUsd = jsonl.revertedInputUsd || 0;
+    const revCrUsd = jsonl.revertedCacheUsd || 0;
+    const revOutUsd = jsonl.revertedOutputUsd || 0;
+    const revUsd = jsonl.revertedUsd || 0;
+    const revSavedUsd = jsonl.revertedSavedCacheUsd || 0;
+
+    const totalInTok = inTok + revIn;
+    const totalCrTok = crTok + revCr;
+    const totalOutTok = outTok + revOut;
+    const totalSelfUsd = selfUsd + revUsd;
+    const totalInUsd = inputUsd + revInUsd;
+    const totalCrUsd = cacheUsd + revCrUsd;
+    const totalOutUsd = outputUsd + revOutUsd;
+    const totalSavedUsd = savedCacheUsd + revSavedUsd;
+    const mergedDaily = finalizeDaily(jsonlDaily, latestStepTimeSec);
+    if (revSteps > 0) mergeDailyInto(mergedDaily, jsonl.revertedDaily);
+    const mergedDailyModels = finalizeDailyModels(jsonlModelDaily, latestStepTimeSec);
+    if (revSteps > 0) mergeDailyModelsInto(mergedDailyModels, jsonl.revertedDailyModels);
+
+    const denom = totalInTok + totalCrTok;
+    const cacheHitRatio = denom > 0 ? round(totalCrTok / denom, 4) : 0;
 
     const byModel =
-      jsonl.canonicalSteps.length > 0
+      jsonl.canonicalSteps.length + revSteps > 0
         ? [
             {
               kind: 'llm',
@@ -1948,12 +2044,12 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
               botId: '',
               responseId: '',
               traceHash: '',
-              costUsd: round(selfUsd, 6),
-              inputTokens: inTok,
-              cacheReadTokens: crTok,
-              outputTokens: outTok,
+              costUsd: round(totalSelfUsd, 6),
+              inputTokens: totalInTok,
+              cacheReadTokens: totalCrTok,
+              outputTokens: totalOutTok,
               imageCount: 0,
-              steps: jsonl.canonicalSteps.length,
+              steps: jsonl.canonicalSteps.length + revSteps,
             },
           ]
         : [];
@@ -1977,28 +2073,32 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
       },
       tokens: {
         ...base.tokens,
-        input: inTok,
-        output: outTok,
+        input: totalInTok,
+        output: totalOutTok,
         thinking: 0,
-        response: outTok,
-        cacheRead: crTok,
+        response: totalOutTok,
+        cacheRead: totalCrTok,
         cacheHitRatio,
-        treeInput: inTok,
-        treeOutput: outTok,
-        treeCacheRead: crTok,
+        treeInput: totalInTok,
+        treeOutput: totalOutTok,
+        treeCacheRead: totalCrTok,
         treeCacheHitRatio: cacheHitRatio,
       },
       cost: {
         ...base.cost,
-        selfUsd: round(selfUsd, 6),
-        treeUsd: round(selfUsd, 6),
-        inputUsd: round(inputUsd, 6),
-        cacheUsd: round(cacheUsd, 6),
-        outputUsd: round(outputUsd, 6),
-        savedCacheUsd: round(savedCacheUsd, 6),
-        retryBranchDeltaUsd: round(Math.max(0, jsonl.allJsonlUsd - selfUsd), 6),
-        daily: finalizeDaily(jsonlDaily, latestStepTimeSec),
-        dailyModels: finalizeDailyModels(jsonlModelDaily, latestStepTimeSec),
+        selfUsd: round(totalSelfUsd, 6),
+        treeUsd: round(totalSelfUsd, 6),
+        inputUsd: round(totalInUsd, 6),
+        cacheUsd: round(totalCrUsd, 6),
+        outputUsd: round(totalOutUsd, 6),
+        savedCacheUsd: round(totalSavedUsd, 6),
+        retryBranchDeltaUsd: round(revUsd, 6),
+        retryBranchStepCount: revSteps,
+        retryBranchInput: revIn,
+        retryBranchCacheRead: revCr,
+        retryBranchOutput: revOut,
+        daily: mergedDaily,
+        dailyModels: mergedDailyModels,
         byModel,
         treeByModel: byModel,
       },
@@ -2200,7 +2300,7 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
         core.modelSpec,
         effectiveMinStepIdx
       );
-    } else if (tSt && tSt.size <= 262_144) {
+    } else if (tSt && tSt.size <= 16 * 1024 * 1024) {
       jsonl = getJsonlUsageFallbackAndTotal(
         convId,
         preferredDir,
@@ -2209,21 +2309,93 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
       );
     }
 
-    let retryBranchDeltaUsd = 0;
-    if (jsonl && jsonl.allInput + jsonl.allOutput > core.tokens.input + core.tokens.output) {
-      const dIn = Math.max(0, jsonl.allInput - core.tokens.input);
-      const dCache = Math.max(0, jsonl.allCache - core.tokens.cacheRead);
-      const dOut = Math.max(0, jsonl.allOutput - core.tokens.output);
-      const rates = pricing.resolveStepRates(
-        core.modelSpec,
-        core.latestStepTimeSec || 0,
-        core.waterline.currentTokens || 0
-      );
-      retryBranchDeltaUsd = round(
-        (dIn * rates.inputRate + dCache * rates.cacheRate + dOut * rates.outputRate) /
-          1_000_000,
-        6
-      );
+    const revSteps = jsonl?.revertedStepCount || 0;
+    const revIn = revSteps > 0 ? jsonl.revertedInput || 0 : 0;
+    const revCr = revSteps > 0 ? jsonl.revertedCache || 0 : 0;
+    const revOut = revSteps > 0 ? jsonl.revertedOutput || 0 : 0;
+    const revInUsd = revSteps > 0 ? jsonl.revertedInputUsd || 0 : 0;
+    const revCrUsd = revSteps > 0 ? jsonl.revertedCacheUsd || 0 : 0;
+    const revOutUsd = revSteps > 0 ? jsonl.revertedOutputUsd || 0 : 0;
+    const revUsd = revSteps > 0 ? jsonl.revertedUsd || 0 : 0;
+    const revSavedUsd = revSteps > 0 ? jsonl.revertedSavedCacheUsd || 0 : 0;
+    const retryBranchDeltaUsd = round(revUsd, 6);
+
+    let mergedTokens = core.tokens;
+    let mergedCost = core.cost;
+    let mergedModel = core.model;
+
+    if (revSteps > 0 && (revUsd > 0 || revIn + revOut + revCr > 0)) {
+      const nextIn = (core.tokens.input || 0) + revIn;
+      const nextCr = (core.tokens.cacheRead || 0) + revCr;
+      const nextOut = (core.tokens.output || 0) + revOut;
+      const nextDenom = nextIn + nextCr;
+      const nextHit = nextDenom > 0 ? round(nextCr / nextDenom, 4) : 0;
+
+      mergedTokens = {
+        ...core.tokens,
+        input: nextIn,
+        output: nextOut,
+        response: (core.tokens.response || 0) + revOut,
+        cacheRead: nextCr,
+        cacheHitRatio: nextHit,
+        treeInput: nextIn,
+        treeOutput: nextOut,
+        treeCacheRead: nextCr,
+        treeCacheHitRatio: nextHit,
+      };
+
+      const clonedDaily = {};
+      mergeDailyInto(clonedDaily, core.cost.daily);
+      mergeDailyInto(clonedDaily, jsonl.revertedDaily);
+
+      const clonedDailyModels = {};
+      mergeDailyModelsInto(clonedDailyModels, core.cost.dailyModels);
+      mergeDailyModelsInto(clonedDailyModels, jsonl.revertedDailyModels);
+
+      const clonedByModel = (core.cost.byModel || []).map((bm) => ({ ...bm }));
+      const targetBm = clonedByModel.find(
+        (bm) => bm.kind !== 'image' && bm.slug === core.model?.slug
+      ) || clonedByModel.find((bm) => bm.kind !== 'image');
+      if (targetBm) {
+        targetBm.costUsd = round((Number(targetBm.costUsd) || 0) + revUsd, 6);
+        targetBm.inputTokens = (Number(targetBm.inputTokens) || 0) + revIn;
+        targetBm.cacheReadTokens = (Number(targetBm.cacheReadTokens) || 0) + revCr;
+        targetBm.outputTokens = (Number(targetBm.outputTokens) || 0) + revOut;
+        targetBm.steps = (Number(targetBm.steps) || 0) + revSteps;
+      }
+
+      const nextSelfUsd = round((Number(core.cost.selfUsd) || 0) + revUsd, 6);
+      mergedCost = {
+        ...core.cost,
+        selfUsd: nextSelfUsd,
+        treeUsd: nextSelfUsd,
+        inputUsd: round((Number(core.cost.inputUsd) || 0) + revInUsd, 6),
+        cacheUsd: round((Number(core.cost.cacheUsd) || 0) + revCrUsd, 6),
+        outputUsd: round((Number(core.cost.outputUsd) || 0) + revOutUsd, 6),
+        savedCacheUsd: round((Number(core.cost.savedCacheUsd) || 0) + revSavedUsd, 6),
+        retryBranchDeltaUsd,
+        retryBranchStepCount: revSteps,
+        retryBranchInput: revIn,
+        retryBranchCacheRead: revCr,
+        retryBranchOutput: revOut,
+        daily: clonedDaily,
+        dailyModels: clonedDailyModels,
+        byModel: clonedByModel,
+        treeByModel: clonedByModel,
+      };
+      mergedModel = {
+        ...core.model,
+        byModel: clonedByModel,
+      };
+    } else {
+      mergedCost = {
+        ...core.cost,
+        retryBranchDeltaUsd: 0,
+        retryBranchStepCount: 0,
+        retryBranchInput: 0,
+        retryBranchCacheRead: 0,
+        retryBranchOutput: 0,
+      };
     }
 
     const latestFileMtimeMs = Math.max(
@@ -2280,6 +2452,8 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
 
     return {
       ...core,
+      model: mergedModel,
+      tokens: mergedTokens,
       isGenerating,
       generatingElapsedSec,
       selfLlmDurationSec,
@@ -2293,10 +2467,7 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
       },
       lastActivityMs,
       ageSinceActivitySec,
-      cost: {
-        ...core.cost,
-        retryBranchDeltaUsd,
-      },
+      cost: mergedCost,
     };
   }
 

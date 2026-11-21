@@ -149,6 +149,15 @@ export function buildCostTip(t) {
   for (const [label, v, sub] of compItems.filter(([, x]) => x > 0).sort((a, b) => b[1] - a[1])) {
     rows.push([label, formatUsd(v), sub]);
   }
+  const retryUsd = Number(c.treeRetryBranchDeltaUsd ?? c.retryBranchDeltaUsd ?? 0);
+  const retrySteps = Number(c.treeRetryBranchStepCount ?? c.retryBranchStepCount ?? 0);
+  if (retryUsd > 0) {
+    rows.push([
+      tr('含撤销重问', 'Incl. Reverted Retries'),
+      formatUsd(retryUsd),
+      retrySteps > 0 ? tr(`${retrySteps} 步`, `${retrySteps} steps`) : '',
+    ]);
+  }
 
   const sections = [];
   const models = getModelsBreakdown(t);

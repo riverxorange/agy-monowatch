@@ -4,8 +4,8 @@
  * Hosts the Auxiliary Pane Web UI, JSON telemetry endpoints, and real-time
  * Server-Sent Events (`GET /api/stream`) backed by `telemetry.mjs`.
  * Strictly read-only towards Antigravity data: never mutates user conversations, SQLite DBs,
- * or host config. The only files it writes are `settings.json` and `update_cache.json`
- * inside the sidecar's private data directory.
+ * or host config. The only files it writes are `settings.json`, `update_cache.json`, and
+ * `usage_ledger.sqlite` inside the sidecar's private data directory.
  */
 
 import { timingSafeEqual } from 'node:crypto';
@@ -32,6 +32,7 @@ const bootBundleMtimeMs = Math.max(
   safeFileMtimeMs(__filename),
   safeFileMtimeMs(join(__dirname, 'updater.mjs')),
   safeFileMtimeMs(join(__dirname, 'telemetry', 'engine.mjs')),
+  safeFileMtimeMs(join(__dirname, 'telemetry', 'ledger.mjs')),
   safeFileMtimeMs(join(__dirname, 'telemetry', 'metrics.mjs')),
   safeFileMtimeMs(join(__dirname, 'telemetry', 'models.mjs')),
   safeFileMtimeMs(join(__dirname, 'telemetry', 'proto.mjs')),

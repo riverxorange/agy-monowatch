@@ -3188,6 +3188,11 @@ button.ov2-tr:hover .ov2-proj-name {
   font-weight: 500;
 }
 
+.ov2-badge.is-muted {
+  color: var(--ink-muted, var(--text-muted, #8b949e));
+  font-weight: 500;
+}
+
 .ov2-row-time.is-live,
 .sub-gap.is-live {
   color: var(--accent-mint);

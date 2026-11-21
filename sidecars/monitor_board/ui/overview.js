@@ -1038,6 +1038,9 @@ function formatRelativeTime(ms) {
 }
 
 function resolveRowBadge(t) {
+  if (t.isDeleted) {
+    return { text: tr('已删除', 'Deleted'), cls: 'ov2-badge is-muted' };
+  }
   const tc = t.issues?.treeCounts || t.issues?.counts || {};
   if (t.alert?.kind === 'safety' || (tc.safety_filter || 0) > 0) {
     return { text: tr('安全过滤', 'Filtered'), cls: 'ov2-badge is-alert' };

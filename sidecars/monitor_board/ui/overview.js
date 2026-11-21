@@ -81,7 +81,7 @@ export function invalidateOverviewShell() {
 function getMainTabs() {
   return [
     ['overview', tr('总览', 'Overview')],
-    ['conversation', tr('对话', 'Conversations')],
+    ['conversation', tr('对话', 'Chats')],
     ['project', tr('项目', 'Projects')],
     ['cli', 'CLI'],
     ['cloud', tr('事件', 'Events')],
@@ -476,14 +476,14 @@ function ensureOverviewShell() {
           </button>
           <button type="button" class="nav-link ov2-current" data-open-thread="" style="display:none">${tr('当前会话', 'Current')}</button>
         </span>
-        <nav class="ov2-wins" aria-label="${tr('时间范围', 'Time window')}"></nav>
+        <div class="ov2-top-controls">
+          <nav class="ov2-wins" aria-label="${tr('时间范围', 'Time window')}"></nav>
+          <button type="button" class="nav-link ov2-update" data-action="apply-update" style="display:none"></button>
+        </div>
       </header>
       <div class="ov2-nav-bar sec-pad tnum">
         <nav class="ov2-tabs" aria-label="${tr('主导航', 'Navigation')}"></nav>
-        <span class="ov2-nav-right">
-          <button type="button" class="nav-link ov2-update" data-action="apply-update" style="display:none"></button>
-          <span class="ov2-live" style="display:none"><span class="hdr-dot-live is-pulsing"></span><span class="ov2-live-text"></span></span>
-        </span>
+        <span class="ov2-live" style="display:none"><span class="hdr-dot-live is-pulsing"></span><span class="ov2-live-text"></span></span>
       </div>
       <div class="ov2-pane-overview">
         <section class="ov2-hero sec-pad"></section>
@@ -827,6 +827,16 @@ function buildSetupHtml(settings) {
   }
 
   const autoCheckBtn = `<button type="button" class="ov2-link ov2-muted-link" data-action="toggle-update-check">${settings.updateCheck === false ? tr('自动检测已关', 'Auto-check off') : tr('自动检测已开', 'Auto-check on')}</button>`;
+  const releaseNotes =
+    state.updateInfo?.hasUpdate && Array.isArray(state.updateInfo?.releaseNotes)
+      ? state.updateInfo.releaseNotes.filter(Boolean).slice(0, 6)
+      : [];
+  const releaseNotesHtml =
+    state.settingsOpen && releaseNotes.length > 0
+      ? `<div class="ov2-release-notes">
+           ${releaseNotes.map((line) => `<div class="ov2-release-line">${escapeHtml(line)}</div>`).join('')}
+         </div>`
+      : '';
 
   const done = state.settingsOpen
     ? `<div class="ov2-setup-actions tnum">
@@ -836,7 +846,7 @@ function buildSetupHtml(settings) {
            ${autoCheckBtn}
          </span>
          <button type="button" class="ov2-link" data-action="close-settings">${tr('完成', 'Done')}</button>
-       </div>`
+       </div>${releaseNotesHtml}`
     : '';
 
   return `
@@ -1773,11 +1783,15 @@ export function renderOverview() {
           ? `v${latestV} ↑`
           : `<span class="ov2-update-verb">更新 </span>v${latestV}`
       );
+      const releaseNotes = Array.isArray(state.updateInfo.releaseNotes)
+        ? state.updateInfo.releaseNotes.filter(Boolean).slice(0, 5)
+        : [];
       setTip(
         shell.updateBtn,
         encodeTip({
           title: tr('发现新版本', 'Update Available'),
           right: `v${curV} → v${state.updateInfo.latestVersion}`,
+          rows: releaseNotes.map((line) => [line, '']),
           note: state.updateInfo.canSelfUpdate
             ? tr('点击直接热更新，无需重启客户端', 'Click to hot-update without restarting')
             : tr('点击前往 GitHub 查看更新', 'Click to open GitHub repository'),

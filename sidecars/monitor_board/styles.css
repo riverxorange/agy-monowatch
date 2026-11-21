@@ -2379,10 +2379,34 @@ body {
   }
 }
 
+.ov2-top-controls {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+@container (max-width: 520px) {
+  .ov2-top-controls {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+}
+
+@media (max-width: 520px) {
+  .ov2-top-controls {
+    flex: 1 1 100%;
+    justify-content: space-between;
+  }
+}
+
 .ov2-wins {
   display: inline-flex;
   align-items: center;
   gap: 15px;
+  white-space: nowrap;
 }
 
 .ov2-win {
@@ -2423,6 +2447,14 @@ body {
   display: inline-flex;
   align-items: baseline;
   gap: 18px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ov2-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 html[lang="en"] .ov2-tabs {
@@ -2461,7 +2493,22 @@ html[lang="en"] .ov2-tabs {
     display: none;
   }
   html[lang="en"] .ov2-tabs {
-    gap: 6.5px;
+    gap: 7px;
+  }
+  html[lang="en"] .ov2-tab {
+    font-size: 11.5px;
+  }
+}
+
+@media (max-width: 385px) {
+  .ov2-tabs {
+    gap: 12px;
+  }
+  .ov2-live-text {
+    display: none;
+  }
+  html[lang="en"] .ov2-tabs {
+    gap: 7px;
   }
   html[lang="en"] .ov2-tab {
     font-size: 11.5px;
@@ -2479,6 +2526,8 @@ html[lang="en"] .ov2-tabs {
   font-size: var(--fs-md);
   font-weight: 500;
   color: var(--ink-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
   cursor: pointer;
   transition: color 0.14s ease, border-bottom-color 0.14s ease;
 }
@@ -3191,6 +3240,23 @@ button.ov2-tr:hover .ov2-proj-name {
 .ov2-badge.is-muted {
   color: var(--ink-muted, var(--text-muted, #8b949e));
   font-weight: 500;
+}
+
+.ov2-release-notes {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  color: var(--ink-muted);
+}
+
+.ov2-release-line {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .ov2-row-time.is-live,

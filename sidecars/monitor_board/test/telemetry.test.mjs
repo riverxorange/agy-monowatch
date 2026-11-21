@@ -20,7 +20,7 @@ import {
   parseToolFailureSlice,
   resolveOrchestratorPhase,
 } from '../telemetry.mjs';
-import { compareSemver, extractTarEntries, parseRepoSlug } from '../updater.mjs';
+import { compareSemver, extractTarEntries, parseRepoSlug, summarizeReleaseNotes } from '../updater.mjs';
 
 function encodeVarint(val) {
   const bytes = [];
@@ -1009,6 +1009,13 @@ test('Updater semver comparator, repo slug parser, and USTAR+PAX tar extractor r
     ['plugin.json', 'sidecars/ui/i18n.js']
   );
   assert.equal(entries[0].data.toString('utf8'), '{"name":"monowatch"}');
+  assert.deepEqual(
+    summarizeReleaseNotes(
+      `## What's New\n\n- Added \`usage_ledger.sqlite\` for **deleted** sessions\n- See [docs](https://example.com) for details\n`
+    ),
+    ['Added usage_ledger.sqlite for deleted sessions', 'See docs for details']
+  );
+  assert.deepEqual(summarizeReleaseNotes(''), []);
 });
 
 test('End-to-end reverted retry branches from transcript.jsonl are merged into primary cost, tokens, and daily breakdowns', () => {

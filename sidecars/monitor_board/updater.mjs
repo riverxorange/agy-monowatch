@@ -181,6 +181,47 @@ function execGit(args, timeoutMs = 15_000) {
   });
 }
 
+export function summarizeReleaseNotes(markdown, maxItems = 6) {
+  if (!markdown || typeof markdown !== 'string') return [];
+  const cleanInline = (s) =>
+    s
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/(\*\*|__|~~|`)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const bullets = [];
+  const headings = [];
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    const headingMatch = line.match(/^#{1,6}\s+(.+)$/);
+    if (headingMatch) {
+      const cleaned = cleanInline(headingMatch[1]);
+      if (cleaned && !/^(what'?s\s+new|changelog|release\s+notes|更新内容|更新日志)$/i.test(cleaned)) {
+        headings.push(cleaned);
+      }
+      continue;
+    }
+    const bulletMatch = line.match(/^[-*+]\s+(.+)$/);
+    if (bulletMatch) {
+      const cleaned = cleanInline(bulletMatch[1]);
+      if (cleaned) bullets.push(cleaned);
+      continue;
+    }
+    if (!line.startsWith('<!--') && !line.startsWith('```')) {
+      const cleaned = cleanInline(line);
+      if (cleaned) bullets.push(cleaned);
+    }
+  }
+
+  // Prefer concise section headings when available; otherwise fall back to bullet items.
+  const chosen = headings.length > 0 ? headings : bullets;
+  return chosen.slice(0, maxItems).map((item) =>
+    item.length > 240 ? `${item.slice(0, 239)}…` : item
+  );
+}
+
 export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleRestart }) {
   const resolvedRoot = resolve(pluginRoot);
   let checkInFlight = null;
@@ -234,6 +275,9 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
     const enabled = isEnabled ? Boolean(isEnabled()) : true;
     const latestVersion = String(cache?.latestVersion || local.version).replace(/^v/i, '');
     const hasUpdate = enabled && compareSemver(latestVersion, local.version) > 0;
+    const releaseNotes = Array.isArray(cache?.releaseNotes)
+      ? cache.releaseNotes.filter((s) => typeof s === 'string' && s.trim()).slice(0, 6)
+      : [];
     return {
       currentVersion: local.version,
       latestVersion,
@@ -242,8 +286,40 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
       canSelfUpdate: isInstalledPluginPath(resolvedRoot),
       repoUrl: local.repoUrl,
       releaseUrl: cache?.releaseUrl || `${local.repoUrl}/releases`,
+      releaseNotes,
       checkedAtMs: Number(cache?.checkedAtMs || 0),
     };
+  }
+
+  async function fetchReleaseMetadata(local, headers, targetVersion = '') {
+    const urls = targetVersion
+      ? [
+          `https://api.github.com/repos/${local.repoSlug}/releases/tags/v${targetVersion}`,
+          `https://api.github.com/repos/${local.repoSlug}/releases/latest`,
+        ]
+      : [`https://api.github.com/repos/${local.repoSlug}/releases/latest`];
+    for (const apiUrl of urls) {
+      try {
+        const res = await fetch(apiUrl, {
+          headers,
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!res.ok) continue;
+        const rel = await res.json();
+        const ver = String(rel?.tag_name || rel?.name || '')
+          .trim()
+          .replace(/^v/i, '');
+        if (!parseSemverParts(ver)) continue;
+        return {
+          latestVersion: ver,
+          releaseUrl: String(rel?.html_url || `${local.repoUrl}/releases`),
+          releaseNotes: summarizeReleaseNotes(rel?.body || ''),
+        };
+      } catch {
+        // try next URL
+      }
+    }
+    return null;
   }
 
   async function fetchRemoteLatest(local) {
@@ -264,9 +340,20 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
         const pkg = await res.json();
         const ver = String(pkg?.version || '').trim().replace(/^v/i, '');
         if (parseSemverParts(ver)) {
+          let releaseUrl = `${local.repoUrl}/releases`;
+          let releaseNotes = [];
+          // Only query GitHub Releases API when a newer version is actually available.
+          if (compareSemver(ver, local.version) > 0) {
+            const relMeta = await fetchReleaseMetadata(local, headers, ver);
+            if (relMeta) {
+              releaseUrl = relMeta.releaseUrl || releaseUrl;
+              releaseNotes = relMeta.releaseNotes || [];
+            }
+          }
           return {
             latestVersion: ver,
-            releaseUrl: `${local.repoUrl}`,
+            releaseUrl,
+            releaseNotes,
           };
         }
       }
@@ -275,25 +362,11 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
     }
 
     // Fallback: GitHub Releases latest tag
-    const apiUrl = `https://api.github.com/repos/${local.repoSlug}/releases/latest`;
-    const res = await fetch(apiUrl, {
-      headers,
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+    const relMeta = await fetchReleaseMetadata(local, headers, '');
+    if (!relMeta) {
+      throw new Error('Failed to fetch latest release metadata');
     }
-    const rel = await res.json();
-    const ver = String(rel?.tag_name || rel?.name || '')
-      .trim()
-      .replace(/^v/i, '');
-    if (!parseSemverParts(ver)) {
-      throw new Error('Invalid release version tag');
-    }
-    return {
-      latestVersion: ver,
-      releaseUrl: String(rel?.html_url || `${local.repoUrl}/releases`),
-    };
+    return relMeta;
   }
 
   async function getStatus({ force = false } = {}) {
@@ -322,6 +395,7 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
             checkedAtMs: Date.now(),
             latestVersion: remote.latestVersion,
             releaseUrl: remote.releaseUrl,
+            releaseNotes: remote.releaseNotes || [],
           };
           writeCache(next);
           return next;
@@ -331,6 +405,7 @@ export function createUpdater({ pluginRoot, getCachePath, isEnabled, onScheduleR
             checkedAtMs: Date.now(),
             latestVersion: cached?.latestVersion || local.version,
             releaseUrl: cached?.releaseUrl || `${local.repoUrl}`,
+            releaseNotes: Array.isArray(cached?.releaseNotes) ? cached.releaseNotes : [],
             error: String(err?.message || err),
           };
           writeCache(next);

@@ -233,6 +233,16 @@ test('Pricing registry disambiguates Claude Sonnet/Opus, resolves M669, honors o
     assert.equal(neonMed.outputRate, 15.0);
     assert.equal(registry.resolveStepRates(neonMed, 0, 250_000).inputRate, 3.0);
 
+    const neonHigh = registry.resolveModelBySlugOrText('gemini-4-neon', 1532);
+    assert.equal(neonHigh.slug, 'gemini-4-neon-high');
+    assert.equal(registry.resolveModelBySlugOrText('gemini-4-neon', 1534).slug, 'gemini-4-neon-low');
+    assert.equal(registry.resolveModelBySlugOrText('gemini-4-neon', 1535).slug, 'gemini-4-neon-xhigh');
+    assert.equal(registry.resolveModelBySlugOrText('', 1400).slug, 'claude-opus-5-5-low');
+    assert.equal(registry.resolveModelBySlugOrText('', 1401).slug, 'claude-opus-5-5-medium');
+    assert.equal(registry.resolveModelBySlugOrText('', 1403).slug, 'claude-sonnet-5-5-low');
+    assert.equal(registry.resolveModelBySlugOrText('', 1404).slug, 'claude-sonnet-5-5-medium');
+    assert.equal(registry.resolveModelBySlugOrText('', 1405).slug, 'claude-sonnet-5-5-high');
+
     const neonOrch = registry.resolveModelBySlugOrText('gemini-pro-orchestrator-neon', 0);
     assert.equal(neonOrch.slug, 'gemini-pro-orchestrator-neon');
     assert.equal(neonOrch.fullName, 'Gemini 4 Neon (Orchestrator)');
@@ -258,6 +268,23 @@ test('Pricing registry disambiguates Claude Sonnet/Opus, resolves M669, honors o
       100_000
     );
     assert.equal(decScheduled.inputRate, 1.5);
+
+    const carbonMed = registry.slugCatalog.get('gemini-4-carbon-medium');
+    const carbonMedNov = registry.resolveStepRates(
+      carbonMed,
+      Date.parse('2026-11-30T23:59:00Z') / 1000,
+      100_000
+    );
+    assert.equal(carbonMedNov.inputRate, 2.0);
+    assert.equal(carbonMedNov.outputRate, 10.0);
+    const carbonMedDecLong = registry.resolveStepRates(
+      carbonMed,
+      Date.parse('2026-12-01T00:00:00Z') / 1000,
+      250_000
+    );
+    assert.equal(carbonMedDecLong.inputRate, 4.0);
+    assert.equal(carbonMedDecLong.cacheRate, 0.2);
+    assert.equal(carbonMedDecLong.outputRate, 20.0);
 
     const imgLiteRate = registry.resolveImageStepRate('gemini-3.1-flash-lite-image', 0);
     assert.equal(imgLiteRate.perImageUsd, 0.034);

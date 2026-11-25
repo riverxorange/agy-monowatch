@@ -36,6 +36,18 @@ const GEMINI_LEGACY_PRO_OVER_200K = Object.freeze({
   outputRate: 18.0,
 });
 
+// Gemini 4 Carbon promotional rate ($2 / $0.10 / $10) ends 2026-11-30;
+// standard rate ($4 / $0.20 / $20, flat up to 1M) takes effect 2026-12-01.
+const GEMINI_CARBON_DEC_2026_SCHEDULE = Object.freeze([
+  Object.freeze({
+    effectiveFrom: '2026-12-01T00:00:00Z',
+    inputRate: 4.0,
+    cacheRate: 0.2,
+    outputRate: 20.0,
+    over200k: null,
+  }),
+]);
+
 export const BASE_MODELS = [
   {
     enums: [1528],
@@ -98,8 +110,8 @@ export const BASE_MODELS = [
     outputRate: 7.5,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1535],
+    placeholders: ['MODEL_PLACEHOLDER_M535'],
     slugs: [
       'gemini-4-neon-xhigh',
       'gemini-4-neon-extra-high',
@@ -116,8 +128,8 @@ export const BASE_MODELS = [
     outputRate: 15.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1532],
+    placeholders: ['MODEL_PLACEHOLDER_M532'],
     slugs: ['gemini-4-neon-high'],
     slug: 'gemini-4-neon-high',
     shortName: 'Neon',
@@ -144,8 +156,8 @@ export const BASE_MODELS = [
     outputRate: 15.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1534],
+    placeholders: ['MODEL_PLACEHOLDER_M534'],
     slugs: ['gemini-4-neon-low'],
     slug: 'gemini-4-neon-low',
     shortName: 'Neon',
@@ -171,6 +183,7 @@ export const BASE_MODELS = [
     cacheRate: 0.1,
     outputRate: 10.0,
     over200k: GEMINI_PRO_OVER_200K,
+    schedule: GEMINI_CARBON_DEC_2026_SCHEDULE,
   },
   {
     enums: [1437],
@@ -186,6 +199,7 @@ export const BASE_MODELS = [
     cacheRate: 0.1,
     outputRate: 10.0,
     over200k: GEMINI_PRO_OVER_200K,
+    schedule: GEMINI_CARBON_DEC_2026_SCHEDULE,
   },
   {
     enums: [1438],
@@ -201,6 +215,7 @@ export const BASE_MODELS = [
     cacheRate: 0.1,
     outputRate: 10.0,
     over200k: GEMINI_PRO_OVER_200K,
+    schedule: GEMINI_CARBON_DEC_2026_SCHEDULE,
   },
   {
     enums: [1417],
@@ -275,6 +290,7 @@ export const BASE_MODELS = [
     cacheRate: 0.1,
     outputRate: 10.0,
     over200k: GEMINI_PRO_OVER_200K,
+    schedule: GEMINI_CARBON_DEC_2026_SCHEDULE,
   },
   {
     enums: [1681],
@@ -406,8 +422,8 @@ export const BASE_MODELS = [
     outputRate: 20.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1401],
+    placeholders: ['MODEL_PLACEHOLDER_M401'],
     slugs: ['claude-opus-5-5-medium', 'claude-opus-5-5'],
     slug: 'claude-opus-5-5-medium',
     shortName: 'Opus 5.5',
@@ -421,8 +437,8 @@ export const BASE_MODELS = [
     outputRate: 20.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1400],
+    placeholders: ['MODEL_PLACEHOLDER_M400'],
     slugs: ['claude-opus-5-5-low'],
     slug: 'claude-opus-5-5-low',
     shortName: 'Opus 5.5',
@@ -436,8 +452,8 @@ export const BASE_MODELS = [
     outputRate: 20.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1405],
+    placeholders: ['MODEL_PLACEHOLDER_M405'],
     slugs: ['claude-sonnet-5-5-high'],
     slug: 'claude-sonnet-5-5-high',
     shortName: 'Sonnet 5.5',
@@ -451,8 +467,8 @@ export const BASE_MODELS = [
     outputRate: 10.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1404],
+    placeholders: ['MODEL_PLACEHOLDER_M404'],
     slugs: ['claude-sonnet-5-5-medium', 'claude-sonnet-5-5'],
     slug: 'claude-sonnet-5-5-medium',
     shortName: 'Sonnet 5.5',
@@ -466,8 +482,8 @@ export const BASE_MODELS = [
     outputRate: 10.0,
   },
   {
-    enums: [],
-    placeholders: [],
+    enums: [1403],
+    placeholders: ['MODEL_PLACEHOLDER_M403'],
     slugs: ['claude-sonnet-5-5-low'],
     slug: 'claude-sonnet-5-5-low',
     shortName: 'Sonnet 5.5',
@@ -623,9 +639,12 @@ function normalizeScheduleEntry(rawEntry, baseSpec) {
           cacheWriteRate: rawEntry.over200kCacheWriteRate,
         }
       : null);
-  const over200k = over200kRaw
-    ? normalizeOver200kTier(over200kRaw, { inputRate, cacheRate, outputRate })
-    : baseSpec.over200k || null;
+  const over200k =
+    rawEntry.over200k === null
+      ? null
+      : over200kRaw
+        ? normalizeOver200kTier(over200kRaw, { inputRate, cacheRate, outputRate })
+        : baseSpec.over200k || null;
 
   return {
     effectiveFrom: rawEntry.effectiveFrom || null,

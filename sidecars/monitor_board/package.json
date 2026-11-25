@@ -1,6 +1,6 @@
 {
   "name": "monitor_board",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "type": "module",
   "license": "MIT",
   "description": "monowatch telemetry sidecar backend and Swiss UI",

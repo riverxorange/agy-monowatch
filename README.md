@@ -35,13 +35,13 @@ Once installed, you can mention `@[plugin:monowatch]` in any conversation (or as
 ### Option 2: Manual install
 
 ```bash
-git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/monowatch
+git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/agy-monowatch
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-git clone https://github.com/riverxorange/agy-monowatch.git "$HOME\.gemini\config\plugins\monowatch"
+git clone https://github.com/riverxorange/agy-monowatch.git "$HOME\.gemini\config\plugins\agy-monowatch"
 ```
 
 Then enable **monowatch** on Antigravity's Customizations page and open it from the side panel.

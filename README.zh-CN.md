@@ -35,13 +35,13 @@
 ### 方式二：手动安装
 
 ```bash
-git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/monowatch
+git clone https://github.com/riverxorange/agy-monowatch.git ~/.gemini/config/plugins/agy-monowatch
 ```
 
 Windows（PowerShell）：
 
 ```powershell
-git clone https://github.com/riverxorange/agy-monowatch.git "$HOME\.gemini\config\plugins\monowatch"
+git clone https://github.com/riverxorange/agy-monowatch.git "$HOME\.gemini\config\plugins\agy-monowatch"
 ```
 
 然后在 Antigravity 的插件管理页启用 **monowatch**，从侧边栏打开即可。

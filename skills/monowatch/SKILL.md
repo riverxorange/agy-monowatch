@@ -32,5 +32,5 @@ Example: the current conversation's detail view.
 ## Managing the plugin
 
 - To enable, disable or inspect the plugin, link to `[monowatch](customization://monowatch)`. Do not edit `~/.gemini/config/config.json` by hand.
-- To update, the user can click **Update** in the panel header. If `~/.gemini/config/plugins/monowatch/.git` exists, you may also run `git -C ~/.gemini/config/plugins/monowatch pull --ff-only`. The panel reloads itself; Antigravity does not need a restart.
+- To update, the user can click **Update** in the panel header. If `~/.gemini/config/plugins/agy-monowatch/.git` exists, you may also run `git -C ~/.gemini/config/plugins/agy-monowatch pull --ff-only`. The panel reloads itself; Antigravity does not need a restart.
 - Custom prices go in `<appData>/sidecar_data/monowatch/monitor_board/data/pricing_override.json`. The format is described in `docs/TELEMETRY_SPEC.md` in the plugin directory.

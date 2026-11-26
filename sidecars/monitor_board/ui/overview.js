@@ -66,6 +66,7 @@ import { buildChildRowTip, buildCostTip, buildWaterlineTip } from './tooltips.js
 import {
   PLAN_OPTIONS,
   computeRoiDots,
+  dayKeyOf,
   formatMonthDay,
   resolvePlanLabel,
   resolveWindow,
@@ -236,8 +237,32 @@ function computeOverviewModel() {
   const byCat = { conversation: emptyAgg(), project: emptyAgg(), cli: emptyAgg() };
   const catCounts = { conversation: 0, project: 0, cli: 0 };
   const byModel = new Map();
+  const byDay = new Map();
   const projectsMap = new Map();
   const rootUsd = new Map();
+
+  const foldByDay = (dailyObj) => {
+    if (!dailyObj) return;
+    for (const key of Object.keys(dailyObj)) {
+      const b = dailyObj[key];
+      if (!Array.isArray(b)) continue;
+      const usd = Number(b[0]) || 0;
+      const inp = Number(b[1]) || 0;
+      const cr = Number(b[2]) || 0;
+      const out = Number(b[3]) || 0;
+      if (!(usd > 0 || inp > 0 || cr > 0 || out > 0)) continue;
+      let cur = byDay.get(key);
+      if (!cur) {
+        cur = { usd: 0, inp: 0, cr: 0, out: 0, tokens: 0 };
+        byDay.set(key, cur);
+      }
+      cur.usd += usd;
+      cur.inp += inp;
+      cur.cr += cr;
+      cur.out += out;
+      cur.tokens += inp + cr + out;
+    }
+  };
 
   const ensureProject = (key, name, firstWs) => {
     let p = projectsMap.get(key);
@@ -289,6 +314,7 @@ function computeOverviewModel() {
     const currentHost = isCurrentHostThread(r);
 
     foldDaily(nodeDaily(r), win, own, total, byCat[cat]);
+    foldByDay(nodeDaily(r));
     const ownWinUsd = win.kind === 'all' ? Number(r.cost?.treeUsd ?? r.cost?.selfUsd ?? own.usd) : own.usd;
     rootUsd.set(r.id, ownWinUsd);
     foldModels(nodeDailyModels(r));
@@ -312,6 +338,7 @@ function computeOverviewModel() {
 
   for (const cat of Object.keys(byCat)) {
     foldDaily(archive.byCategory?.[cat], win, total, byCat[cat]);
+    foldByDay(archive.byCategory?.[cat]);
     if (win.kind === 'all') {
       catCounts[cat] += Number(archive.catCounts?.[cat]) || 0;
     } else {
@@ -446,6 +473,8 @@ function computeOverviewModel() {
     projects,
     projectsMap,
     byModel,
+    byDay,
+    todayHourly: Array.isArray(snap.totals?.todayHourly) ? snap.totals.todayHourly : [],
     signalCounts,
     signalCats: cats,
     windowEvents,
@@ -469,16 +498,23 @@ function ensureOverviewShell() {
   appEl.innerHTML = `
     <div class="view-overview" data-shell="overview-v2">
       <header class="ov2-top sec-pad tnum">
-        <span class="ov-brand-group">
-          <button type="button" class="ov-brand" data-main-tab="overview">
-            ${BRAND_LOGO_SVG}
-            <span class="ov-brand-word">monowatch</span>
-          </button>
-          <button type="button" class="nav-link ov2-current" data-open-thread="" style="display:none">${tr('当前会话', 'Current')}</button>
-        </span>
+        <div class="ov2-top-row">
+          <span class="ov-brand-group">
+            <button type="button" class="ov-brand" data-main-tab="overview">
+              ${BRAND_LOGO_SVG}
+              <span class="ov-brand-word">monowatch</span>
+            </button>
+            <button type="button" class="nav-link ov2-current" data-open-thread="" style="display:none">${tr('当前会话', 'Current')}</button>
+          </span>
+          <span class="ov2-top-right">
+            <button type="button" class="nav-link ov2-update" data-action="apply-update" style="display:none"></button>
+            <button type="button" class="ov2-gear-btn" data-action="open-settings" title="${tr('设置', 'Settings')}" aria-label="${tr('设置', 'Settings')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </span>
+        </div>
         <div class="ov2-top-controls">
           <nav class="ov2-wins" aria-label="${tr('时间范围', 'Time window')}"></nav>
-          <button type="button" class="nav-link ov2-update" data-action="apply-update" style="display:none"></button>
         </div>
       </header>
       <div class="ov2-nav-bar sec-pad tnum">
@@ -487,8 +523,11 @@ function ensureOverviewShell() {
       </div>
       <div class="ov2-pane-overview">
         <section class="ov2-hero sec-pad"></section>
-        <section class="ov2-setup sec-pad" style="display:none"></section>
+        <section class="ov2-block ov2-activity-sec sec-pad"></section>
         <section class="ov2-block ov2-models-sec ov2-block-last sec-pad"></section>
+      </div>
+      <div class="ov2-modal-backdrop" data-action="close-settings-backdrop" style="display:none">
+        <div class="ov2-modal" role="dialog" aria-modal="true" aria-label="${tr('设置', 'Settings')}"></div>
       </div>
       <section class="ov2-issues sec-pad" style="display:none"></section>
       <section class="ov2-canary sec-pad" style="display:none"></section>
@@ -512,7 +551,9 @@ function ensureOverviewShell() {
     liveText: root.querySelector('.ov2-live-text'),
     overviewPane: root.querySelector('.ov2-pane-overview'),
     hero: root.querySelector('.ov2-hero'),
-    setup: root.querySelector('.ov2-setup'),
+    modalBackdrop: root.querySelector('.ov2-modal-backdrop'),
+    modal: root.querySelector('.ov2-modal'),
+    activitySec: root.querySelector('.ov2-activity-sec'),
     modelsSec: root.querySelector('.ov2-models-sec'),
     issues: root.querySelector('.ov2-issues'),
     canary: root.querySelector('.ov2-canary'),
@@ -534,6 +575,7 @@ function ensureOverviewShell() {
 function windowShortLabel(win) {
   if (win.kind === 'today') return tr('今日', 'Today');
   if (win.kind === '7d') return tr('近 7 天', '7d');
+  if (win.kind === 'month') return tr('本月', 'Month');
   if (win.kind === 'all') return tr('累计', 'Total');
   return win.isBilling ? tr('本期', 'Cycle') : tr('近 30 天', '30d');
 }
@@ -547,8 +589,9 @@ function windowRangeLabel(win) {
 function buildWindowTabs(win, settings) {
   const opts = [
     ['today', tr('今日', 'Today')],
-    ['7d', tr('近 7 天', '7d')],
-    ['period', settings.billingDay ? tr('本期', 'Cycle') : tr('近 30 天', '30d')],
+    ['7d', tr('7天', '7d')],
+    ['period', settings.billingDay ? tr('本期', 'Cycle') : tr('30天', '30d')],
+    ['month', tr('本月', 'Month')],
     ['all', tr('全部', 'All')],
   ];
   return opts
@@ -663,12 +706,18 @@ function buildHeroHtml(m) {
   let dots = '';
   const facts = [];
   const planFact = plan
-    ? `<button type="button" class="ov2-link" data-action="open-settings">${escapeHtml(resolvePlanLabel(plan))}${monthly > 0 ? ` $${monthly.toFixed(2)}` : ''}</button>`
-    : '';
+    ? `${escapeHtml(resolvePlanLabel(plan))}${monthly > 0 ? ` $${monthly.toFixed(2)}` : ''}`
+    : `<button type="button" class="ov2-link" data-action="open-settings">${tr('设置订阅', 'Set plan')}</button>`;
 
-  if (win.kind === 'period') {
-    facts.push(fact(win.isBilling ? tr('账期', 'Cycle') : tr('范围', 'Range'), windowRangeLabel(win)));
-    if (win.isBilling) {
+  if (win.kind === 'period' || win.kind === 'month') {
+    const isMonth = win.kind === 'month';
+    facts.push(
+      fact(
+        win.isBilling ? tr('账期', 'Cycle') : tr('范围', 'Range'),
+        windowRangeLabel(win)
+      )
+    );
+    if (win.isBilling || isMonth) {
       facts.push(
         fact(tr('剩余', 'Left'), isEn() ? `${win.remainingDays}d` : `${win.remainingDays} 天`)
       );
@@ -676,9 +725,14 @@ function buildHeroHtml(m) {
     if (plan && monthly > 0) {
       const mult = usd / monthly;
       let projected = 0;
-      if (win.isBilling && win.elapsedDays >= 2 && win.remainingDays > 3 && win.elapsedFraction > 0) {
+      if ((win.isBilling || isMonth) && win.elapsedDays >= 2 && win.remainingDays > 3 && win.elapsedFraction > 0) {
         projected = usd / win.elapsedFraction;
-        facts.push(fact(tr('本期预计', 'Projected'), formatUsd(projected, true)));
+        facts.push(
+          fact(
+            isMonth ? tr('本月预计', 'Projected') : tr('本期预计', 'Projected'),
+            formatUsd(projected, true)
+          )
+        );
       } else if (tokensAll > 0) {
         facts.push(fact('Token', formatTokensCompact(tokensAll)));
       }
@@ -737,7 +791,7 @@ function buildHeroHtml(m) {
     facts.push(fact(tr('会话', 'Conversations'), `${m.sessionCount.toLocaleString('en-US')}`));
     if (tokensAll > 0) facts.push(fact('Token', formatTokensCompact(tokensAll)));
   }
-  if (planFact) facts.push(fact(tr('订阅', 'Plan'), planFact, ' is-end'));
+  if (planFact) facts.push(fact(tr('订阅', 'Plan'), planFact));
 
   const heroTip = buildHeroTip(total);
   const heroTipAttr = heroTip ? ` data-tip="${escapeHtml(heroTip)}"` : '';
@@ -803,12 +857,10 @@ function buildSetupHtml(settings) {
     return `<button type="button" class="ov2-opt${active ? ' is-active' : ''}" data-lang="${opt.id}"><span class="ov2-opt-name">${label}</span></button>`;
   }).join('');
 
-  const langRow = state.settingsOpen
-    ? `<div class="ov2-field">
-         <span class="ov2-k">${tr('界面语言', 'Language')}</span>
-         <div class="ov2-opts ov2-opts-3">${langOpts}</div>
-       </div>`
-    : '';
+  const langRow = `<div class="ov2-field">
+       <span class="ov2-k">${tr('界面语言', 'Language')}</span>
+       <div class="ov2-opts ov2-opts-3">${langOpts}</div>
+     </div>`;
 
   const verStr = state.updateInfo?.currentVersion || '2.0.0';
   let verStatusHtml = '';
@@ -832,33 +884,284 @@ function buildSetupHtml(settings) {
       ? state.updateInfo.releaseNotes.filter(Boolean).slice(0, 6)
       : [];
   const releaseNotesHtml =
-    state.settingsOpen && releaseNotes.length > 0
+    releaseNotes.length > 0
       ? `<div class="ov2-release-notes">
            ${releaseNotes.map((line) => `<div class="ov2-release-line">${escapeHtml(line)}</div>`).join('')}
          </div>`
       : '';
 
-  const done = state.settingsOpen
-    ? `<div class="ov2-setup-actions tnum">
-         <span class="ov2-ver-bar">
-           <span class="ov2-ver-num">v${escapeHtml(verStr)}</span>
-           ${verStatusHtml}
-           ${autoCheckBtn}
-         </span>
-         <button type="button" class="ov2-link" data-action="close-settings">${tr('完成', 'Done')}</button>
-       </div>${releaseNotesHtml}`
-    : '';
+  const done = `<div class="ov2-setup-actions tnum">
+       <span class="ov2-ver-bar">
+         <span class="ov2-ver-num">v${escapeHtml(verStr)}</span>
+         ${verStatusHtml}
+         ${autoCheckBtn}
+       </span>
+       <button type="button" class="ov2-link" data-action="close-settings">${tr('完成', 'Done')}</button>
+     </div>${releaseNotesHtml}`;
 
   return `
-    <div class="ov2-field">
-      <span class="ov2-k">${tr('订阅方案', 'Subscription')}</span>
-      <div class="ov2-opts">${opts.join('')}</div>
-      ${customRow}
+    <div class="ov2-modal-head">
+      <span class="ov2-modal-title">${tr('设置', 'Settings')}</span>
+      <button type="button" class="ov2-modal-close" data-action="close-settings" aria-label="${tr('关闭', 'Close')}">×</button>
     </div>
-    ${dayRow}
-    ${langRow}
-    ${done}
+    <div class="ov2-modal-body">
+      <div class="ov2-field">
+        <span class="ov2-k">${tr('订阅方案', 'Subscription')}</span>
+        <div class="ov2-opts">${opts.join('')}</div>
+        ${customRow}
+      </div>
+      ${dayRow}
+      ${langRow}
+      ${done}
+    </div>
   `;
+}
+
+// ---------------------------------------------------------------------------
+// Activity Heatmap (Token 消耗热力图: 今日 24h / 7天 / 本期 / 本月 / 全部)
+// ---------------------------------------------------------------------------
+
+function heatLevel(val, maxVal) {
+  if (!(val > 0) || !(maxVal > 0)) return 0;
+  const r = Math.sqrt(val / maxVal);
+  if (r < 0.25) return 1;
+  if (r < 0.5) return 2;
+  if (r < 0.78) return 3;
+  return 4;
+}
+
+function addLocalDays(d, n) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+}
+
+function isoWeekday(d) {
+  // Monday = 0 .. Sunday = 6
+  return (d.getDay() + 6) % 7;
+}
+
+function buildDayCellTip(dateObj, key, data) {
+  const wkZh = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][isoWeekday(dateObj)];
+  const wkEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][isoWeekday(dateObj)];
+  const title = isEn() ? `${key} ${wkEn}` : `${key} ${wkZh}`;
+  if (!data || !(data.tokens > 0 || data.usd > 0)) {
+    return encodeTip({ title, right: tr('无消耗', 'No usage'), rows: [] });
+  }
+  return encodeTip({
+    title,
+    right: `${formatTokensCompact(data.tokens)} tok`,
+    rows: [
+      [tr('等效价值', 'API value'), formatUsd(data.usd, true)],
+      [tr('缓存读取', 'Cache read'), formatTokensCompact(data.cr)],
+      [tr('未命中输入', 'Uncached input'), formatTokensCompact(data.inp)],
+      [tr('模型输出', 'Output'), formatTokensCompact(data.out)],
+    ],
+  });
+}
+
+function buildHourCellTip(hour, b) {
+  const h0 = String(hour).padStart(2, '0');
+  const h1 = String((hour + 1) % 24).padStart(2, '0');
+  const title = isEn() ? `Today ${h0}:00–${h1}:00` : `今日 ${h0}:00–${h1}:00`;
+  const usd = Number(b?.[0]) || 0;
+  const inp = Number(b?.[1]) || 0;
+  const cr = Number(b?.[2]) || 0;
+  const out = Number(b?.[3]) || 0;
+  const tokens = inp + cr + out;
+  if (!(tokens > 0 || usd > 0)) {
+    return encodeTip({ title, right: tr('无消耗', 'No usage'), rows: [] });
+  }
+  return encodeTip({
+    title,
+    right: `${formatTokensCompact(tokens)} tok`,
+    rows: [
+      [tr('等效价值', 'API value'), formatUsd(usd, true)],
+      [tr('缓存读取', 'Cache read'), formatTokensCompact(cr)],
+      [tr('未命中输入', 'Uncached input'), formatTokensCompact(inp)],
+      [tr('模型输出', 'Output'), formatTokensCompact(out)],
+    ],
+  });
+}
+
+function buildActivityHtml(m) {
+  const { win, byDay, todayHourly, total } = m;
+  const tokensAll = total.input + total.cacheRead + total.output;
+  const now = new Date();
+  const todayKey = dayKeyOf(now);
+  const nowHour = now.getHours();
+
+  const legend = `
+    <span class="ov2-act-legend" aria-hidden="true">
+      <span class="ov2-act-leg-lbl">${tr('少', 'Less')}</span>
+      <span class="ov2-act-swatch lv-0"></span>
+      <span class="ov2-act-swatch lv-1"></span>
+      <span class="ov2-act-swatch lv-2"></span>
+      <span class="ov2-act-swatch lv-3"></span>
+      <span class="ov2-act-swatch lv-4"></span>
+      <span class="ov2-act-leg-lbl">${tr('多', 'More')}</span>
+    </span>`;
+
+  const head = `
+    <div class="ov2-sec-head ov2-act-head">
+      <span class="ov2-act-title-grp">
+        <span class="ov2-sec-title">${tr('Token 活跃度', 'Token Activity')}</span>
+        ${tokensAll > 0 ? `<span class="ov2-act-sum tnum">${formatTokensCompact(tokensAll)}</span>` : ''}
+      </span>
+      ${legend}
+    </div>`;
+
+  // 1) Today: 24 hourly cells (00..23)
+  if (win.kind === 'today') {
+    let maxTok = 0;
+    const hrs = [];
+    for (let h = 0; h < 24; h++) {
+      const b = todayHourly[h] || [0, 0, 0, 0];
+      const tok = (Number(b[1]) || 0) + (Number(b[2]) || 0) + (Number(b[3]) || 0);
+      if (tok > maxTok) maxTok = tok;
+      hrs.push({ h, b, tok });
+    }
+    const cells = hrs
+      .map(({ h, b, tok }) => {
+        const isFuture = h > nowHour;
+        const lv = isFuture ? 0 : heatLevel(tok, maxTok);
+        const cls = `ov2-act-cell lv-${lv}${h === nowHour ? ' is-today' : ''}${isFuture ? ' is-future' : ''}`;
+        const tip = isFuture ? '' : ` data-tip="${escapeHtml(buildHourCellTip(h, b))}"`;
+        return `<span class="${cls}"${tip}></span>`;
+      })
+      .join('');
+    return `
+      ${head}
+      <div class="ov2-act-24h">${cells}</div>
+      <div class="ov2-act-axis tnum">
+        <span>00</span><span>06</span><span>12</span><span>18</span><span>23</span>
+      </div>`;
+  }
+
+  // 2) Last 7 days: 7 spacious daily cells with weekday + date labels
+  if (win.kind === '7d') {
+    const days = [];
+    let maxTok = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = addLocalDays(win.start, i);
+      const k = dayKeyOf(d);
+      const data = byDay.get(k) || null;
+      const tok = data?.tokens || 0;
+      if (tok > maxTok) maxTok = tok;
+      days.push({ d, k, data, tok });
+    }
+    const wkLabels = isEn()
+      ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+      : ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const items = days
+      .map(({ d, k, data, tok }) => {
+        const lv = heatLevel(tok, maxTok);
+        const cls = `ov2-act-cell ov2-act-7d-cell lv-${lv}${k === todayKey ? ' is-today' : ''}`;
+        const tip = buildDayCellTip(d, k, data);
+        const wk = wkLabels[isoWeekday(d)];
+        return `
+          <div class="ov2-act-7d-col">
+            <span class="${cls}" data-tip="${escapeHtml(tip)}"></span>
+            <span class="ov2-act-7d-wk">${wk}</span>
+            <span class="ov2-act-7d-dt tnum">${d.getMonth() + 1}/${d.getDate()}</span>
+          </div>`;
+      })
+      .join('');
+    return `${head}<div class="ov2-act-7d">${items}</div>`;
+  }
+
+  // 3) Cycle / 30d / Month: 7-column Mon..Sun calendar heatmap
+  if (win.kind === 'period' || win.kind === 'month') {
+    const days = [];
+    let maxTok = 0;
+    const totalDays = Math.min(35, Math.max(1, win.totalDays || 30));
+    for (let i = 0; i < totalDays; i++) {
+      const d = addLocalDays(win.start, i);
+      const k = dayKeyOf(d);
+      const isFuture = k > todayKey;
+      const data = isFuture ? null : byDay.get(k) || null;
+      const tok = data?.tokens || 0;
+      if (tok > maxTok) maxTok = tok;
+      days.push({ d, k, data, tok, isFuture });
+    }
+    const leadBlanks = isoWeekday(win.start);
+    const wkShort = isEn()
+      ? ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+      : ['一', '二', '三', '四', '五', '六', '日'];
+    const wkRow = wkShort.map((w) => `<span class="ov2-act-wk">${w}</span>`).join('');
+    const blanks = Array.from({ length: leadBlanks }, () => '<span class="ov2-act-blank"></span>').join('');
+    const cells = days
+      .map(({ d, k, data, tok, isFuture }) => {
+        const lv = isFuture ? 0 : heatLevel(tok, maxTok);
+        const cls = `ov2-act-cell ov2-act-cal-cell lv-${lv}${k === todayKey ? ' is-today' : ''}${isFuture ? ' is-future' : ''}`;
+        const tip = isFuture ? '' : ` data-tip="${escapeHtml(buildDayCellTip(d, k, data))}"`;
+        return `<span class="${cls}"${tip}><span class="ov2-act-daynum tnum">${d.getDate()}</span></span>`;
+      })
+      .join('');
+    return `
+      ${head}
+      <div class="ov2-act-cal-wk">${wkRow}</div>
+      <div class="ov2-act-cal">${blanks}${cells}</div>`;
+  }
+
+  // 4) All: GitHub-style 7-row x N-week contribution grid (Mon..Sun rows)
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const thisWeekMon = addLocalDays(todayStart, -isoWeekday(todayStart));
+  let startMon = addLocalDays(thisWeekMon, -15 * 7); // minimum 16 weeks
+  if (m.earliestKey) {
+    const [ey, em, ed] = m.earliestKey.split('-').map(Number);
+    if (ey && em && ed) {
+      const earlyDate = new Date(ey, em - 1, ed);
+      const earlyMon = addLocalDays(earlyDate, -isoWeekday(earlyDate));
+      const minAllowed = addLocalDays(thisWeekMon, -51 * 7); // cap at 52 weeks
+      const clampedEarly = earlyMon < minAllowed ? minAllowed : earlyMon;
+      if (clampedEarly < startMon) startMon = clampedEarly;
+    }
+  }
+  const numWeeks = Math.max(16, Math.round((thisWeekMon - startMon) / (7 * 86_400_000)) + 1);
+  let maxTok = 0;
+  const gridDays = [];
+  for (let w = 0; w < numWeeks; w++) {
+    for (let r = 0; r < 7; r++) {
+      const d = addLocalDays(startMon, w * 7 + r);
+      const k = dayKeyOf(d);
+      const isFuture = k > todayKey;
+      const data = isFuture ? null : byDay.get(k) || null;
+      const tok = data?.tokens || 0;
+      if (tok > maxTok) maxTok = tok;
+      gridDays.push({ d, k, data, tok, isFuture, w, r });
+    }
+  }
+
+  const monthNamesEn = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let lastMonth = -1;
+  const monthCols = [];
+  for (let w = 0; w < numWeeks; w++) {
+    const monDate = addLocalDays(startMon, w * 7);
+    const mo = monDate.getMonth();
+    const label =
+      mo !== lastMonth && (w > 0 || numWeeks <= 18)
+        ? isEn()
+          ? monthNamesEn[mo]
+          : `${mo + 1}月`
+        : '';
+    lastMonth = mo;
+    monthCols.push(`<span class="ov2-act-gh-mo">${label}</span>`);
+  }
+
+  const cells = gridDays
+    .map(({ d, k, data, tok, isFuture }) => {
+      if (isFuture) return '<span class="ov2-act-gh-cell is-future"></span>';
+      const lv = heatLevel(tok, maxTok);
+      const cls = `ov2-act-cell ov2-act-gh-cell lv-${lv}${k === todayKey ? ' is-today' : ''}`;
+      return `<span class="${cls}" data-tip="${escapeHtml(buildDayCellTip(d, k, data))}"></span>`;
+    })
+    .join('');
+
+  return `
+    ${head}
+    <div class="ov2-act-gh-wrap">
+      <div class="ov2-act-gh-months" style="--weeks:${numWeeks}">${monthCols.join('')}</div>
+      <div class="ov2-act-gh-grid" style="--weeks:${numWeeks}">${cells}</div>
+    </div>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1815,7 +2118,8 @@ export function renderOverview() {
       `<div class="ov2-hero-row"><div class="ov2-hero-main"><span class="ov2-k">${tr('等效 API 价值', 'API Value')}</span><span class="ov-hero-cost tnum">$0.00</span></div></div>`
     );
     for (const el of [
-      shell.setup,
+      shell.modalBackdrop,
+      shell.activitySec,
       shell.modelsSec,
       shell.issues,
       shell.canary,
@@ -1835,6 +2139,13 @@ export function renderOverview() {
     setDisplay(shell.live, true, 'inline-flex');
   } else {
     setDisplay(shell.live, false);
+  }
+
+  if (state.settingsOpen) {
+    setHtmlCached(shell.modal, buildSetupHtml(m.settings));
+    setDisplay(shell.modalBackdrop, true, 'flex');
+  } else {
+    setDisplay(shell.modalBackdrop, false);
   }
 
   if (activeTab === 'cloud') {
@@ -1868,12 +2179,8 @@ export function renderOverview() {
     setDisplay(shell.hero, true, 'block');
     setHtmlCached(shell.hero, buildHeroHtml(m));
 
-    if (shouldShowSetup(m.settings)) {
-      setHtmlCached(shell.setup, buildSetupHtml(m.settings));
-      setDisplay(shell.setup, true, 'flex');
-    } else {
-      setDisplay(shell.setup, false);
-    }
+    setDisplay(shell.activitySec, true, 'block');
+    setHtmlCached(shell.activitySec, buildActivityHtml(m));
 
     setDisplay(shell.modelsSec, true, 'block');
     setHtmlCached(shell.modelsSec, buildModelsHtml(m));

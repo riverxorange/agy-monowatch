@@ -208,6 +208,56 @@ export function mergeDailyInto(target, source) {
   return target;
 }
 
+// Per-hour buckets for recent activity (last 48h): [0 usd, 1 inp, 2 cacheRead, 3 out]
+export function localHourKey(sec) {
+  if (!(sec > 0)) return '';
+  const d = new Date(sec * 1000);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd} ${hh}`;
+}
+
+export function addHourly(map, sec, usd = 0, inp = 0, cr = 0, out = 0) {
+  if (!(sec > 0) || !(usd > 0 || inp > 0 || cr > 0 || out > 0)) return;
+  const key = localHourKey(sec);
+  if (!key) return;
+  let b = map.get(key);
+  if (!b) {
+    b = [0, 0, 0, 0];
+    map.set(key, b);
+  }
+  b[0] += usd;
+  b[1] += inp;
+  b[2] += cr;
+  b[3] += out;
+}
+
+export function finalizeHourly(map, cutoffSec = Date.now() / 1000 - 48 * 3600) {
+  const minKey = localHourKey(cutoffSec);
+  const out = {};
+  for (const [k, b] of map) {
+    if (minKey && k < minKey) continue;
+    out[k] = [round(b[0], 6), b[1], b[2], b[3]];
+  }
+  return out;
+}
+
+export function mergeHourlyInto(target, source) {
+  if (!source || typeof source !== 'object') return target;
+  for (const k of Object.keys(source)) {
+    const src = source[k];
+    if (!Array.isArray(src)) continue;
+    const cur = target[k] || [0, 0, 0, 0];
+    cur[0] += Number(src[0]) || 0;
+    cur[1] += Number(src[1]) || 0;
+    cur[2] += Number(src[2]) || 0;
+    cur[3] += Number(src[3]) || 0;
+    target[k] = cur;
+  }
+  return target;
+}
+
 /**
  * Per-day metrics by model: Map<dayKey, Map<modelName, number[8]>>.
  * Layout: [0 usd, 1 inp, 2 cacheRead, 3 out, 4 decodeOut, 5 decodeSec, 6 ttftSum, 7 ttftCnt]

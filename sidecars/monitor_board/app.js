@@ -732,14 +732,18 @@ function handleOverviewV2Click(e) {
     case 'open-settings':
       e.stopPropagation();
       state.settingsOpen = true;
-      state.mainTab = 'overview';
-      state.overviewMode = 'home';
       if (state.selectedThreadId) {
         closeThread();
       } else {
         render();
       }
-      window.scrollTo(0, 0);
+      return true;
+    case 'close-settings-backdrop':
+      if (e.target !== actionBtn) return false;
+      e.stopPropagation();
+      state.settingsOpen = false;
+      state.customPlanDraft = false;
+      render();
       return true;
     case 'close-settings':
       e.stopPropagation();
@@ -1056,6 +1060,14 @@ window.addEventListener('popstate', () => {
   );
   render();
   if (tid) fetchThreadDetail(tid, false);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && state.settingsOpen) {
+    state.settingsOpen = false;
+    state.customPlanDraft = false;
+    render();
+  }
 });
 
 initThemeSync(() => render());

@@ -15,9 +15,11 @@ import {
   addDailyModel,
   addDailyModelPerf,
   addDailyPerf,
+  addHourly,
   fileSig,
   finalizeDaily,
   finalizeDailyModels,
+  finalizeHourly,
   mergeDailyInto,
   mergeDailyModelsInto,
   openReadOnlyDb,
@@ -766,6 +768,7 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
     let savedCacheUsd = 0;
     let claudeCacheWriteEstUsd = 0;
     const dailyMap = new Map();
+    const hourlyMap = new Map();
     const dailyModelMap = new Map();
 
     let lastPlannerStep = null;
@@ -1346,6 +1349,7 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
           stepCacheUsd,
           stepOutUsd
         );
+        addHourly(hourlyMap, stepTimeSec || rowMaxTime, stepTotalUsd, inp, cr, out);
         addDailyModel(
           dailyModelMap,
           stepTimeSec || rowMaxTime,
@@ -1860,6 +1864,7 @@ export function createMetricsAnalyzer({ pricing, discovery }) {
         retryBranchOutput: 0,
         daily: finalizeDaily(dailyMap, latestStepTimeSec),
         dailyModels: finalizeDailyModels(dailyModelMap, latestStepTimeSec),
+        hourly: finalizeHourly(hourlyMap),
         byModel,
         treeByModel: byModel,
       },

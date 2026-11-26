@@ -16,8 +16,10 @@ import {
   VALID_CONV_UUID_RE,
   dbWalSig,
   fileSig,
+  localDayKey,
   mergeDailyInto,
   mergeDailyModelsInto,
+  mergeHourlyInto,
   openReadOnlyDb,
   parseWorkspaceUris,
   round,
@@ -932,12 +934,16 @@ export function createTelemetryEngine(options = {}) {
       {
         const treeDaily = mergeDailyInto({}, node.cost.daily);
         const treeDailyModels = mergeDailyModelsInto({}, node.cost.dailyModels);
+        const treeHourly = mergeHourlyInto({}, node.cost.hourly);
         for (const child of node.children) {
           mergeDailyInto(treeDaily, child.cost.treeDaily || child.cost.daily);
           mergeDailyModelsInto(treeDailyModels, child.cost.treeDailyModels || child.cost.dailyModels);
+          mergeHourlyInto(treeHourly, child._internal?.treeHourly || child.cost.hourly);
         }
         node.cost.treeDaily = treeDaily;
         node.cost.treeDailyModels = treeDailyModels;
+        node._internal.treeHourly = treeHourly;
+        delete node.cost.hourly;
       }
       node.model.treeHasCanary = Boolean(
         node.model.isCanaryRouted || mergedModels.some((m) => m.isCanaryRouted)
@@ -2011,6 +2017,26 @@ export function createTelemetryEngine(options = {}) {
     const roundedBurnTps = round(totalBurnTps, 1);
 
     const defaultSoftLimit = resolveCurrentDefaultSoftLimit();
+    const todayPrefix = `${localDayKey(Date.now() / 1000)} `;
+    const todayHourly = Array.from({ length: 24 }, () => [0, 0, 0, 0]);
+    for (const r of roots) {
+      const th = r._internal?.treeHourly;
+      if (!th) continue;
+      for (const k of Object.keys(th)) {
+        if (!k.startsWith(todayPrefix)) continue;
+        const h = Number(k.slice(todayPrefix.length));
+        if (h >= 0 && h < 24) {
+          const src = th[k];
+          todayHourly[h][0] += Number(src[0]) || 0;
+          todayHourly[h][1] += Number(src[1]) || 0;
+          todayHourly[h][2] += Number(src[2]) || 0;
+          todayHourly[h][3] += Number(src[3]) || 0;
+        }
+      }
+    }
+    for (let h = 0; h < 24; h++) {
+      todayHourly[h][0] = round(todayHourly[h][0], 6);
+    }
     const publicRoots = roots.map(stripInternalFields);
 
     const issueCats = [
@@ -2088,6 +2114,7 @@ export function createTelemetryEngine(options = {}) {
         defaultSoftLimit,
         totals: {
           defaultSoftLimit,
+          todayHourly,
           costUsd: round(costUsd, 6),
           imageUsd: round(imageUsd, 6),
           savedCacheUsd: round(savedCacheUsd, 6),

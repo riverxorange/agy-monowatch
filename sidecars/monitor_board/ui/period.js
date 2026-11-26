@@ -82,6 +82,26 @@ export function resolveWindow(kind, billingDay, now = new Date()) {
     };
   }
 
+  if (kind === 'month') {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    const elapsedMs = Math.max(0, now.getTime() - start.getTime());
+    return {
+      kind: 'month',
+      start,
+      end,
+      lastDay: addDays(end, -1),
+      startKey: dayKeyOf(start),
+      endKey: dayKeyOf(end),
+      startMs: start.getTime(),
+      endMs: end.getTime(),
+      totalDays: Math.max(1, diffDays(start, end)),
+      elapsedDays: Math.max(1, diffDays(start, today) + 1),
+      remainingDays: Math.max(0, diffDays(today, end)),
+      elapsedFraction: Math.min(1, elapsedMs / Math.max(1, end - start)),
+    };
+  }
+
   if (kind === 'all') {
     return {
       kind,

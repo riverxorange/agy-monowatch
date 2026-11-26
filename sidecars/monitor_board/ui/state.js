@@ -85,11 +85,11 @@ export const state = {
   selectedProjectName: '',
   scope: 'all', // 'workspace' | 'conversation' | 'project' | 'cli' | 'all'
   overviewMode: 'home', // 'home' | 'issues'
-  timeWindow: ['today', '7d', 'period', 'all'].includes(
+  timeWindow: ['today', '7d', 'period', 'month', 'all'].includes(
     initialSearchParams.get('win') || ''
   )
     ? initialSearchParams.get('win')
-    : 'period', // 'today' | '7d' | 'period' | 'all'
+    : 'period', // 'today' | '7d' | 'period' | 'month' | 'all'
   settings: {
     plan: null,
     billingDay: null,
